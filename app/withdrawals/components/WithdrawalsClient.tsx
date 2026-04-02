@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { ASSET_METADATA } from '@/lib/contracts'
 import FilterBar, { StatusFilter, AssetOption } from './FilterBar'
+import FulfillPanel from './FulfillPanel'
 import type { Withdrawal } from '@/lib/vault-reader'
 
 type Props = {
@@ -38,10 +40,12 @@ function formatTimestamp(ts: number): string {
 }
 
 export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props) {
+  const router = useRouter()
   const [status, setStatus] = useState<StatusFilter>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const assetOptions = useMemo<AssetOption[]>(() => {
     const seen = new Set<string>()
@@ -81,11 +85,49 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
     })
   }, [withdrawals, status, startDate, endDate, selectedAssets, vaultAssetMap])
 
+  // Clear row selection when filters change
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [status, startDate, endDate, selectedAssets])
+
+  // The vault all selected rows must belong to (locked once first row is picked)
+  const lockedVault = useMemo(() => {
+    if (selectedIds.size === 0) return null
+    return filtered.find((w) => selectedIds.has(w.id))?.vault ?? null
+  }, [selectedIds, filtered])
+
+  function isSelectable(w: Withdrawal): boolean {
+    if (w.isFulfilled || BigInt(w.shares) === 0n) return false
+    if (lockedVault && w.vault !== lockedVault) return false
+    return true
+  }
+
+  function toggleRow(w: Withdrawal) {
+    if (!isSelectable(w)) return
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(w.id)) next.delete(w.id)
+      else next.add(w.id)
+      return next
+    })
+  }
+
+  const selectedRows = useMemo(
+    () => filtered.filter((w) => selectedIds.has(w.id)),
+    [filtered, selectedIds],
+  )
+
+  const handleFulfillSuccess = useCallback(() => {
+    setSelectedIds(new Set())
+    router.refresh()
+  }, [router])
+
   const pendingCount = withdrawals.filter((w) => !w.isFulfilled).length
   const fulfilledCount = withdrawals.length - pendingCount
 
   return (
-    <div className="space-y-4">
+    // pb-20 leaves room for the sticky FulfillPanel when rows are selected
+    <div className={`space-y-4 ${selectedIds.size > 0 ? 'pb-20' : ''}`}>
       <FilterBar
         status={status}
         onStatusChange={setStatus}
@@ -118,6 +160,7 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50 text-left dark:border-neutral-700 dark:bg-neutral-800/50">
+                <th className="w-10 px-4 py-3" />
                 {['ID', 'Asset', 'Controller', 'Shares', 'Assets', 'Requested At', 'Status'].map(
                   (col) => (
                     <th
@@ -134,12 +177,33 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
               {filtered.map((w) => {
                 const assetAddr = vaultAssetMap[w.vault]
                 const meta = assetAddr ? ASSET_METADATA[assetAddr] : undefined
+                const selectable = isSelectable(w)
+                const checked = selectedIds.has(w.id)
 
                 return (
                   <tr
                     key={w.id}
-                    className="bg-white transition-colors hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800/50"
+                    onClick={() => toggleRow(w)}
+                    className={[
+                      'transition-colors',
+                      selectable ? 'cursor-pointer' : 'cursor-default',
+                      checked
+                        ? 'bg-blue-50 dark:bg-blue-950/30'
+                        : selectable
+                          ? 'bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800/50'
+                          : 'bg-white opacity-50 dark:bg-neutral-900',
+                    ].join(' ')}
                   >
+                    {/* Checkbox */}
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!selectable}
+                        onChange={() => toggleRow(w)}
+                        className="h-4 w-4 rounded accent-neutral-900 disabled:cursor-not-allowed dark:accent-white"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-mono text-neutral-500 dark:text-neutral-400">
                       #{w.id}
                     </td>
@@ -181,6 +245,12 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
           </table>
         </div>
       )}
+
+      <FulfillPanel
+        selected={selectedRows}
+        vaultAssetMap={vaultAssetMap}
+        onSuccess={handleFulfillSuccess}
+      />
     </div>
   )
 }

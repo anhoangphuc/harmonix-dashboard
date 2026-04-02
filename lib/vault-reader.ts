@@ -1,14 +1,6 @@
-import { createPublicClient, http, defineChain } from 'viem'
+import { createPublicClient, http } from 'viem'
 import { HA_VAULT_READER_ADDRESS, HA_VAULT_READER_ABI } from './contracts'
-
-const hyperEvmMainnet = defineChain({
-  id: 999,
-  name: 'HyperEVM Mainnet',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.hyperliquid.xyz/evm'] },
-  },
-})
+import { hyperEvmMainnet } from './wagmi-config'
 
 const publicClient = createPublicClient({
   chain: hyperEvmMainnet,
