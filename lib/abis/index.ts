@@ -1,0 +1,1 @@
+export {HA_VAULT_READER_ABI} from "./ha-vault-reader";
