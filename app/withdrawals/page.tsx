@@ -1,5 +1,8 @@
 import { getAllWithdrawals, getVaultAssetMap } from '@/lib/vault-reader'
 import WithdrawalsClient from './components/WithdrawalsClient'
+import RefreshButton from './components/RefreshButton'
+
+export const dynamic = 'force-dynamic'
 
 export const metadata = {
   title: 'Withdrawals — Harmonix',
@@ -31,6 +34,9 @@ export default async function WithdrawalsPage() {
         <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-sm font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
           {withdrawals.length}
         </span>
+        <div className="ml-auto">
+          <RefreshButton />
+        </div>
       </div>
 
       <WithdrawalsClient withdrawals={withdrawals} vaultAssetMap={vaultAssetMap} />

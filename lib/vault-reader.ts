@@ -72,14 +72,15 @@ export async function getAllWithdrawals(): Promise<Withdrawal[]> {
 
   const results: Withdrawal[] = []
 
-  for (let fromId = 1n; fromId <= length; fromId += PAGE_SIZE) {
-    const toId = fromId + PAGE_SIZE - 1n > length ? length : fromId + PAGE_SIZE - 1n
+  for (let fromId = length; fromId >= 1; fromId -= (fromId > PAGE_SIZE ? PAGE_SIZE : fromId)) {
+    const toId = fromId - PAGE_SIZE + 1n <= 1 ? 1n : fromId - PAGE_SIZE + 1n
 
     const page = await publicClient.readContract({
       address: HA_VAULT_READER_ADDRESS,
       abi: HA_VAULT_READER_ABI,
       functionName: 'getPendingWithdrawals',
-      args: [fromId, toId],
+      // reverse because we traverse backward
+      args: [toId, fromId],
     })
 
     for (const w of page) {
@@ -95,5 +96,6 @@ export async function getAllWithdrawals(): Promise<Withdrawal[]> {
     }
   }
 
+  results.reverse()
   return results
 }
