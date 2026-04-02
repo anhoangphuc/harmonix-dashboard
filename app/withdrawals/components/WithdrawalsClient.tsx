@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { ASSET_METADATA } from '@/lib/contracts'
-import FilterBar, { StatusFilter } from './FilterBar'
+import FilterBar, { StatusFilter, AssetOption } from './FilterBar'
 import type { Withdrawal } from '@/lib/vault-reader'
 
 type Props = {
@@ -41,6 +41,28 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
   const [status, setStatus] = useState<StatusFilter>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set())
+
+  const assetOptions = useMemo<AssetOption[]>(() => {
+    const seen = new Set<string>()
+    const options: AssetOption[] = []
+    for (const assetAddr of Object.values(vaultAssetMap)) {
+      if (seen.has(assetAddr)) continue
+      seen.add(assetAddr)
+      const meta = ASSET_METADATA[assetAddr]
+      options.push({ assetAddress: assetAddr, symbol: meta?.symbol ?? truncateAddress(assetAddr) })
+    }
+    return options
+  }, [vaultAssetMap])
+
+  function handleAssetToggle(assetAddress: string) {
+    setSelectedAssets((prev) => {
+      const next = new Set(prev)
+      if (next.has(assetAddress)) next.delete(assetAddress)
+      else next.add(assetAddress)
+      return next
+    })
+  }
 
   const filtered = useMemo(() => {
     const startTs = startDate ? new Date(startDate).getTime() / 1000 : null
@@ -51,9 +73,13 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
       if (status === 'fulfilled' && !w.isFulfilled) return false
       if (startTs !== null && w.requestedAt < startTs) return false
       if (endTs !== null && w.requestedAt > endTs) return false
+      if (selectedAssets.size > 0) {
+        const assetAddr = vaultAssetMap[w.vault]
+        if (!assetAddr || !selectedAssets.has(assetAddr)) return false
+      }
       return true
     })
-  }, [withdrawals, status, startDate, endDate])
+  }, [withdrawals, status, startDate, endDate, selectedAssets, vaultAssetMap])
 
   const pendingCount = withdrawals.filter((w) => !w.isFulfilled).length
   const fulfilledCount = withdrawals.length - pendingCount
@@ -67,7 +93,10 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
         endDate={endDate}
         onStartDateChange={setStartDate}
         onEndDateChange={setEndDate}
-        onClear={() => { setStatus('all'); setStartDate(''); setEndDate('') }}
+        assetOptions={assetOptions}
+        selectedAssets={selectedAssets}
+        onAssetToggle={handleAssetToggle}
+        onClear={() => { setStatus('all'); setStartDate(''); setEndDate(''); setSelectedAssets(new Set()) }}
       />
 
       {/* Summary */}
