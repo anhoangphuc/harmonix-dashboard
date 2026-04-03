@@ -47,6 +47,9 @@ export type NavPageData = {
   // Stored (last updateNav()) values
   storedPps: string
   lastNavUpdated: string // seconds timestamp as string
+  // Aggregated vault totals (denomination scale, 1e18)
+  totalClaimableNav: string
+  totalPendingNav: string
   // Per-asset breakdown
   assets: AssetNavData[]
   fetchedAt: number // Date.now()
@@ -63,7 +66,7 @@ export async function getNavPageData(): Promise<NavPageData> {
   }) as `0x${string}`
 
   // ── Batch 2: global state (all in parallel) ───────────────────────────────
-  const [navSnapshot, registeredAssets, storedPps, lastNavUpdatedValue] = await Promise.all([
+  const [navSnapshot, registeredAssets, storedPps, lastNavUpdatedValue, vaultOverviews] = await Promise.all([
     publicClient.readContract({
       address: HA_VAULT_READER_ADDRESS,
       abi: HA_VAULT_READER_ABI,
@@ -92,6 +95,20 @@ export async function getNavPageData(): Promise<NavPageData> {
       abi: VAULT_MANAGER_ABI,
       functionName: 'lastNavUpdated',
     }) as Promise<bigint>,
+    publicClient.readContract({
+      address: HA_VAULT_READER_ADDRESS,
+      abi: HA_VAULT_READER_ABI,
+      functionName: 'getAllVaultOverviews',
+    }) as Promise<readonly {
+      vault: `0x${string}`
+      asset: `0x${string}`
+      redeemShares: bigint
+      claimableAssets: bigint
+      pendingAssets: bigint
+      navAsset: bigint
+      navDenomination: bigint
+      isPaused: boolean
+    }[]>,
   ])
 
   // ── Batch 3: per-asset data (all in parallel) ─────────────────────────────
@@ -135,6 +152,19 @@ export async function getNavPageData(): Promise<NavPageData> {
       ])
     : [[], [], []]
 
+  // ── Aggregate claimable / pending in denomination units ───────────────────
+  // denomination = assets * navDenomination / navAsset  (same formula as FundSummaryCards)
+  function assetsToDenomination(assets: bigint, navAsset: bigint, navDenomination: bigint): bigint {
+    if (assets === 0n || navAsset === 0n) return 0n
+    return (assets * navDenomination) / navAsset
+  }
+  const totalClaimableNav = vaultOverviews
+    .reduce((sum, v) => sum + assetsToDenomination(v.claimableAssets, v.navAsset, v.navDenomination), 0n)
+    .toString()
+  const totalPendingNav = vaultOverviews
+    .reduce((sum, v) => sum + assetsToDenomination(v.pendingAssets, v.navAsset, v.navDenomination), 0n)
+    .toString()
+
   // ── Assemble per-asset data ───────────────────────────────────────────────
   const assets: AssetNavData[] = assetList.map((asset, i) => {
     const assetAddr = asset.toLowerCase()
@@ -170,6 +200,8 @@ export async function getNavPageData(): Promise<NavPageData> {
     liveIsValidPps: navSnapshot.isValidPps,
     storedPps: storedPps.toString(),
     lastNavUpdated: lastNavUpdatedValue.toString(),
+    totalClaimableNav,
+    totalPendingNav,
     assets,
     fetchedAt: Date.now(),
   }
