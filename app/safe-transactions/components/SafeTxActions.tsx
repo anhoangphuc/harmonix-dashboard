@@ -1,7 +1,8 @@
 'use client'
 
 import { useAccount } from 'wagmi'
-import { useConfirmSafeTransaction, useExecuteSafeTransaction } from '@/lib/safe/hooks'
+import { useConfirmSafeTransaction, useExecuteSafeTransaction, useCancelSafeTransaction } from '@/lib/safe/hooks'
+import { getSafeAddress } from '@/lib/safe/api-kit'
 import type { PendingSafeTx, SafeInfo } from '@/lib/safe/types'
 
 type Props = {
@@ -9,10 +10,18 @@ type Props = {
   safeInfo: SafeInfo | undefined
 }
 
+function isRejectionTx(tx: PendingSafeTx, safeAddress: string): boolean {
+  const hasEmptyData = !tx.data || tx.data === '0x'
+  const toSelf = tx.to.toLowerCase() === safeAddress.toLowerCase()
+  return hasEmptyData && toSelf
+}
+
 export default function SafeTxActions({ tx, safeInfo }: Props) {
   const { address, isConnected } = useAccount()
   const confirmTx = useConfirmSafeTransaction()
   const executeTx = useExecuteSafeTransaction()
+  const cancelTx = useCancelSafeTransaction()
+  const safeAddress = getSafeAddress()
 
   if (!isConnected || !address) {
     return (
@@ -36,12 +45,15 @@ export default function SafeTxActions({ tx, safeInfo }: Props) {
     (c) => c.owner.toLowerCase() === address.toLowerCase(),
   )
 
+  const isThisARejection = isRejectionTx(tx, safeAddress)
+
   const isConfirmBusy = confirmTx.isPending && confirmTx.variables?.safeTxHash === tx.safeTxHash
   const isExecuteBusy = executeTx.isPending && executeTx.variables?.safeTxHash === tx.safeTxHash
+  const isCancelBusy = cancelTx.isPending && cancelTx.variables?.nonce === Number(tx.nonce)
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {/* Sign */}
+      {/* ── Sign ────────────────────────────────────────────────────── */}
       {!hasSigned && !tx.isExecutable && (
         <button
           onClick={() => confirmTx.mutate({ safeTxHash: tx.safeTxHash })}
@@ -52,14 +64,14 @@ export default function SafeTxActions({ tx, safeInfo }: Props) {
         </button>
       )}
 
-      {/* Already signed + waiting */}
+      {/* ── Already signed + waiting ─────────────────────────────────── */}
       {hasSigned && !tx.isExecutable && (
         <span className="text-sm font-medium text-green-600 dark:text-green-400">
           ✓ Signed — waiting for {tx.confirmationsRequired - tx.confirmationsCount} more
         </span>
       )}
 
-      {/* Execute (threshold met) */}
+      {/* ── Execute (threshold met) ──────────────────────────────────── */}
       {tx.isExecutable && (
         <button
           onClick={() => executeTx.mutate({ safeTxHash: tx.safeTxHash })}
@@ -70,24 +82,48 @@ export default function SafeTxActions({ tx, safeInfo }: Props) {
         </button>
       )}
 
-      {/* Errors */}
+      {/* ── Cancel (only on non-rejection txs, regardless of threshold) ─── */}
+      {!isThisARejection && (
+        <>
+          <span className="text-neutral-200 dark:text-neutral-700 select-none">|</span>
+          <button
+            onClick={() => cancelTx.mutate({ nonce: Number(tx.nonce) })}
+            disabled={isCancelBusy || cancelTx.isSuccess}
+            className="rounded-md border border-red-300 px-4 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCancelBusy ? 'Proposing rejection…' : 'Cancel Transaction'}
+          </button>
+        </>
+      )}
+
+      {/* ── Errors ──────────────────────────────────────────────────── */}
       {confirmTx.isError && confirmTx.variables?.safeTxHash === tx.safeTxHash && (
-        <span className="max-w-xs truncate text-xs text-red-600 dark:text-red-400" title={confirmTx.error?.message}>
-          {confirmTx.error?.message?.slice(0, 80)}
+        <span className="max-w-xs truncate text-xs text-red-600 dark:text-red-400 cursor-help" title={confirmTx.error?.message}>
+          {confirmTx.error?.message}
         </span>
       )}
       {executeTx.isError && executeTx.variables?.safeTxHash === tx.safeTxHash && (
-        <span className="max-w-xs truncate text-xs text-red-600 dark:text-red-400" title={executeTx.error?.message}>
-          {executeTx.error?.message?.slice(0, 80)}
+        <span className="max-w-xs truncate text-xs text-red-600 dark:text-red-400 cursor-help" title={executeTx.error?.message}>
+          {executeTx.error?.message}
+        </span>
+      )}
+      {cancelTx.isError && cancelTx.variables?.nonce === Number(tx.nonce) && (
+        <span className="max-w-xs truncate text-xs text-red-600 dark:text-red-400 cursor-help" title={cancelTx.error?.message}>
+          {cancelTx.error?.message}
         </span>
       )}
 
-      {/* Success */}
+      {/* ── Success feedback ────────────────────────────────────────── */}
       {confirmTx.isSuccess && confirmTx.data?.safeTxHash === tx.safeTxHash && (
         <span className="text-sm font-medium text-green-600 dark:text-green-400">✓ Signature submitted</span>
       )}
       {executeTx.isSuccess && executeTx.data?.safeTxHash === tx.safeTxHash && (
         <span className="text-sm font-medium text-green-600 dark:text-green-400">✓ Transaction executed</span>
+      )}
+      {cancelTx.isSuccess && (
+        <span className="text-sm font-medium text-amber-600 dark:text-amber-400">
+          ✓ Rejection proposed — sign &amp; execute it to finalize cancellation
+        </span>
       )}
     </div>
   )

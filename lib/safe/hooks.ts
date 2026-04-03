@@ -148,9 +148,7 @@ export function useProposeSafeTransaction() {
       if (!address) throw new Error('Wallet not connected')
       if (!connector) throw new Error('Connector not ready')
 
-      // Get the raw EIP-1193 provider from the wagmi connector
       const provider = await connector.getProvider()
-
       const protocolKit = await initProtocolKit(provider, address)
       const apiKit = getApiKit()
 
@@ -159,6 +157,48 @@ export function useProposeSafeTransaction() {
       })
 
       const signedTx = await protocolKit.signTransaction(safeTransaction)
+      const safeTxHash = await protocolKit.getTransactionHash(signedTx)
+
+      const sig = signedTx.getSignature(address.toLowerCase())
+      if (!sig) throw new Error('Failed to generate signature')
+
+      await apiKit.proposeTransaction({
+        safeAddress: getSafeAddress(),
+        safeTransactionData: signedTx.data,
+        safeTxHash,
+        senderAddress: address,
+        senderSignature: sig.data,
+      })
+
+      return { safeTxHash }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['safe', 'pendingTxs'] })
+    },
+  })
+}
+
+// ─── Cancel (Reject) a Pending Transaction ───────────────────────────────────
+// Safe cancellation works by proposing a rejection transaction with the SAME
+// nonce but empty calldata (to=Safe, value=0, data=0x). Whichever executes
+// first claims the nonce slot, permanently orphaning the other.
+
+export function useCancelSafeTransaction() {
+  const queryClient = useQueryClient()
+  const { address, connector } = useAccount()
+
+  return useMutation({
+    mutationFn: async ({ nonce }: { nonce: number }) => {
+      if (!address) throw new Error('Wallet not connected')
+      if (!connector) throw new Error('Connector not ready')
+
+      const provider = await connector.getProvider()
+      const protocolKit = await initProtocolKit(provider, address)
+      const apiKit = getApiKit()
+
+      // Creates a no-op tx (to=Safe, value=0, data=0x) with the same nonce
+      const rejectionTx = await protocolKit.createRejectionTransaction(nonce)
+      const signedTx = await protocolKit.signTransaction(rejectionTx)
       const safeTxHash = await protocolKit.getTransactionHash(signedTx)
 
       const sig = signedTx.getSignature(address.toLowerCase())
