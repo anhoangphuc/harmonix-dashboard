@@ -26,11 +26,18 @@ export type AssetNavData = {
   asset: string
   symbol: string
   decimals: number
-  // Stored per-asset NAV from last updateNav() call
+  // Stored per-asset NAV from last updateNav() call (denomination scale, 1e18)
   storedNav: string
   storedDenomination: string
-  // Live off-chain NAV total from FundNavFeed
+  // Live off-chain NAV total from FundNavFeed (raw token units)
   offChainNav: string
+  // Off-chain NAV converted to denomination (1e18) using stored navAsset/navDenomination ratio
+  offChainDenomination: string
+  // Claimable and pending assets (denomination scale, 1e18)
+  claimableDenomination: string
+  pendingDenomination: string
+  // Effective NAV = storedDenomination - claimable - pending (denomination scale, 1e18)
+  effectiveDenomination: string
   // Individual NAV categories from FundNavFeed
   categories: NavCategoryData[]
 }
@@ -166,6 +173,11 @@ export async function getNavPageData(): Promise<NavPageData> {
     .toString()
 
   // ── Assemble per-asset data ───────────────────────────────────────────────
+  // Build a lookup: asset address (lowercase) → vault overview
+  const overviewByAsset = new Map(
+    (vaultOverviews as typeof vaultOverviews[number][]).map((v) => [v.asset.toLowerCase(), v])
+  )
+
   const assets: AssetNavData[] = assetList.map((asset, i) => {
     const assetAddr = asset.toLowerCase()
     const meta = ASSET_METADATA[assetAddr] ?? { symbol: assetAddr.slice(0, 10), decimals: 18 }
@@ -173,6 +185,23 @@ export async function getNavPageData(): Promise<NavPageData> {
     const [storedNav, storedDenomination] = ((storedNavData as unknown) as [bigint, bigint][])[i] ?? [0n, 0n]
     const offChainNav = (offChainNavs as bigint[])[i] ?? 0n
     const rawCategories = ((categoriesPerAsset as unknown) as { isActive: boolean; description: string; nav: bigint }[][])[i] ?? []
+
+    // Use vault overview's navAsset / navDenomination as the conversion ratio.
+    // Fall back to the stored values if the vault isn't in the overview list.
+    const overview = overviewByAsset.get(assetAddr)
+    const navAsset = overview?.navAsset ?? storedNav
+    const navDenom  = overview?.navDenomination ?? storedDenomination
+
+    const claimable = overview?.claimableAssets ?? 0n
+    const pending   = overview?.pendingAssets   ?? 0n
+
+    const claimableDenomination = assetsToDenomination(claimable, navAsset, navDenom)
+    const pendingDenomination   = assetsToDenomination(pending,   navAsset, navDenom)
+    const offChainDenomination  = assetsToDenomination(offChainNav, navAsset, navDenom)
+
+    // Effective = stored denomination minus claimable and pending (clamped to 0)
+    const effectiveRaw = storedDenomination - claimableDenomination - pendingDenomination
+    const effectiveDenomination = effectiveRaw > 0n ? effectiveRaw : 0n
 
     const categories: NavCategoryData[] = rawCategories.map((cat) => ({
       description: cat.description,
@@ -187,6 +216,10 @@ export async function getNavPageData(): Promise<NavPageData> {
       storedNav: storedNav.toString(),
       storedDenomination: storedDenomination.toString(),
       offChainNav: offChainNav.toString(),
+      offChainDenomination: offChainDenomination.toString(),
+      claimableDenomination: claimableDenomination.toString(),
+      pendingDenomination: pendingDenomination.toString(),
+      effectiveDenomination: effectiveDenomination.toString(),
       categories,
     }
   })

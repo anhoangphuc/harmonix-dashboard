@@ -1,11 +1,32 @@
 'use client'
 
 import { useState } from 'react'
-import { formatTokenAmount, formatDenomination, truncateAddress } from '@/lib/format'
+import { formatDenomination, truncateAddress } from '@/lib/format'
 import type { NavPageData } from '@/lib/nav-reader'
 import CategoryTable, { type Roles } from './CategoryTable'
 
 type Props = { data: NavPageData; roles: Roles }
+
+type StatItem = { label: string; value: string; dimmed?: boolean; highlight?: boolean }
+
+function AssetStat({ label, value, dimmed, highlight }: StatItem) {
+  return (
+    <div className={`flex flex-col gap-0.5 ${highlight ? 'rounded-md bg-blue-50 px-2.5 py-1.5 dark:bg-blue-900/20' : ''}`}>
+      <span className={`text-xs ${highlight ? 'font-medium text-blue-600 dark:text-blue-400' : 'text-neutral-400 dark:text-neutral-500'}`}>
+        {label}
+      </span>
+      <span className={`tabular-nums font-semibold ${
+        highlight
+          ? 'text-base text-blue-700 dark:text-blue-300'
+          : dimmed
+            ? 'text-sm text-neutral-400 dark:text-neutral-500'
+            : 'text-sm text-neutral-900 dark:text-white'
+      }`}>
+        {value}
+      </span>
+    </div>
+  )
+}
 
 export default function AssetNavBreakdown({ data, roles }: Props) {
   const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set())
@@ -41,6 +62,32 @@ export default function AssetNavBreakdown({ data, roles }: Props) {
         {data.assets.map((assetData) => {
           const isExpanded = expandedAssets.has(assetData.asset)
 
+          const stats: StatItem[] = [
+            {
+              label: 'Effective NAV',
+              value: formatDenomination(assetData.effectiveDenomination),
+              highlight: true,
+            },
+            {
+              label: 'Stored NAV',
+              value: formatDenomination(assetData.storedDenomination),
+            },
+            {
+              label: 'Off-chain NAV',
+              value: formatDenomination(assetData.offChainDenomination),
+            },
+            {
+              label: 'Claimable',
+              value: formatDenomination(assetData.claimableDenomination),
+              dimmed: assetData.claimableDenomination === '0',
+            },
+            {
+              label: 'Pending',
+              value: formatDenomination(assetData.pendingDenomination),
+              dimmed: assetData.pendingDenomination === '0',
+            },
+          ]
+
           return (
             <div
               key={assetData.asset}
@@ -49,43 +96,35 @@ export default function AssetNavBreakdown({ data, roles }: Props) {
               {/* Asset header row — clickable to expand */}
               <button
                 onClick={() => toggleAsset(assetData.asset)}
-                className="w-full rounded-lg px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+                className="w-full rounded-lg px-4 py-4 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
               >
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+
                   {/* Symbol + address */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="font-semibold text-neutral-900 dark:text-white">
                       {assetData.symbol}
                     </span>
                     <span className="font-mono text-xs text-neutral-400 dark:text-neutral-500">
                       {truncateAddress(assetData.asset)}
                     </span>
-                  </div>
-
-                  {/* Off-chain NAV */}
-                  <div className="flex items-center gap-1 text-sm">
-                    <span className="text-neutral-500 dark:text-neutral-400 text-xs">Off-chain NAV:</span>
-                    <span className="tabular-nums font-medium text-neutral-900 dark:text-white">
-                      {formatTokenAmount(assetData.offChainNav, assetData.decimals, 4)}
-                      <span className="ml-1 text-xs text-neutral-400">{assetData.symbol}</span>
+                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                      {assetData.categories.length} {assetData.categories.length === 1 ? 'category' : 'categories'}
                     </span>
                   </div>
 
-                  {/* Stored NAV denomination */}
-                  <div className="flex items-center gap-1 text-sm">
-                    <span className="text-neutral-500 dark:text-neutral-400 text-xs">Stored:</span>
-                    <span className="tabular-nums font-medium text-neutral-900 dark:text-white">
-                      {formatDenomination(assetData.storedDenomination)}
-                    </span>
-                  </div>
+                  {/* Divider */}
+                  <div className="hidden sm:block h-6 w-px bg-neutral-200 dark:bg-neutral-700 shrink-0" />
 
-                  {/* Category count badge */}
-                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                    {assetData.categories.length} {assetData.categories.length === 1 ? 'category' : 'categories'}
-                  </span>
+                  {/* Stats grid */}
+                  <div className="flex items-start gap-6 flex-wrap">
+                    {stats.map((s) => (
+                      <AssetStat key={s.label} {...s} />
+                    ))}
+                  </div>
 
                   {/* Expand chevron */}
-                  <span className="ml-auto text-neutral-400 dark:text-neutral-500">
+                  <span className="ml-auto shrink-0 text-neutral-400 dark:text-neutral-500">
                     {isExpanded ? '▲' : '▼'}
                   </span>
                 </div>
