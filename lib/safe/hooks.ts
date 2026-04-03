@@ -152,8 +152,18 @@ export function useProposeSafeTransaction() {
       const protocolKit = await initProtocolKit(provider, address)
       const apiKit = getApiKit()
 
+      // Find the highest nonce already queued so the new tx is appended after
+      // all pending (unexecuted) transactions rather than conflicting with them.
+      const safeAddress = getSafeAddress()
+      const pending = await apiKit.getPendingTransactions(safeAddress)
+      const pendingNonces = (pending.results as SafeMultisigTransactionResponse[]).map((tx) => Number(tx.nonce))
+      const nextNonce = pendingNonces.length > 0
+        ? Math.max(...pendingNonces) + 1
+        : undefined // empty queue → let SDK use the on-chain nonce (already correct)
+
       const safeTransaction = await protocolKit.createTransaction({
         transactions: [{ to, data, value }],
+        ...(nextNonce !== undefined ? { options: { nonce: nextNonce } } : {}),
       })
 
       const signedTx = await protocolKit.signTransaction(safeTransaction)
