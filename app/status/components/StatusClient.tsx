@@ -37,6 +37,7 @@ export default function StatusClient({ data }: { data: FundStatusData }) {
       <FundSummaryCards
         navSnapshot={data.navSnapshot}
         pricePerShare={data.pricePerShare}
+        vaults={data.vaults}
       />
 
       <WithdrawalQueueSummary
