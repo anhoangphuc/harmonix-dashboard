@@ -7,6 +7,17 @@ const publicClient = createPublicClient({
   transport: http(),
 })
 
+// Minimal ERC-20 ABI — only balanceOf is needed
+const ERC20_ABI = [
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const
+
 // ─── Serialisable output types (no bigints) ───────────────────────────────────
 
 export type StrategyAllocation = {
@@ -23,6 +34,8 @@ export type VaultOverviewData = {
   redeemShares: string
   claimableAssets: string
   pendingAssets: string
+  // Current asset token balance held by the vault contract
+  vaultAssetBalance: string
   // NAV
   navAsset: string
   navDenomination: string
@@ -116,14 +129,23 @@ export async function getFundStatus(): Promise<FundStatusData> {
 
   const assets = overviews.map((o) => o.asset)
 
-  // ── Batch 2: per-asset capital breakdown (all in parallel) ────────────────
-  const [idleAmounts, totalManagedAmounts, strategyLists] = assets.length > 0
+  // ── Batch 2: per-asset capital breakdown + vault asset balances (all in parallel) ──
+  const [idleAmounts, totalManagedAmounts, strategyLists, vaultAssetBalances] = assets.length > 0
     ? await Promise.all([
         Promise.all(assets.map((asset) => read('getIdleAssets', [asset]) as Promise<bigint>)),
         Promise.all(assets.map((asset) => read('getTotalManagedAssets', [asset]) as Promise<bigint>)),
         Promise.all(assets.map((asset) => read('getStrategies', [asset]) as Promise<readonly `0x${string}`[]>)),
+        // balanceOf(vault) on each asset token — shows liquid assets the vault actually holds
+        Promise.all(overviews.map((o) =>
+          publicClient.readContract({
+            address: o.asset,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [o.vault],
+          }) as Promise<bigint>
+        )),
       ])
-    : [[], [], []]
+    : [[], [], [], []]
 
   // ── Batch 3: per-strategy allocations (all in parallel) ──────────────────
   const allStrategies = (strategyLists as unknown as `0x${string}`[][]).flat()
@@ -143,6 +165,7 @@ export async function getFundStatus(): Promise<FundStatusData> {
     const idle: bigint = (idleAmounts as bigint[])[i] ?? 0n
     const totalManaged: bigint = (totalManagedAmounts as bigint[])[i] ?? 0n
     const deployed = totalManaged > idle ? totalManaged - idle : 0n
+    const vaultAssetBalance: bigint = (vaultAssetBalances as bigint[])[i] ?? 0n
 
     const vaultStrategyList = ((strategyLists as unknown as `0x${string}`[][])[i] ?? []) as `0x${string}`[]
     const strategies: StrategyAllocation[] = vaultStrategyList.map((addr) => ({
@@ -158,6 +181,7 @@ export async function getFundStatus(): Promise<FundStatusData> {
       redeemShares: o.redeemShares.toString(),
       claimableAssets: o.claimableAssets.toString(),
       pendingAssets: o.pendingAssets.toString(),
+      vaultAssetBalance: vaultAssetBalance.toString(),
       navAsset: o.navAsset.toString(),
       navDenomination: o.navDenomination.toString(),
       isPaused: o.isPaused,
