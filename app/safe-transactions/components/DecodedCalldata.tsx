@@ -1,6 +1,6 @@
 'use client'
 
-import type { DataDecoded } from '@/lib/safe/types'
+import type { DataDecoded, DecodedParam } from '@/lib/safe/types'
 import { ASSET_METADATA } from '@/lib/contracts'
 
 type Props = {
@@ -38,7 +38,7 @@ export default function DecodedCalldata({ decoded, rawData, to }: Props) {
               <span className="ml-1 text-neutral-400 dark:text-neutral-500">({param.type})</span>
             </span>
             <span className="break-all font-mono text-neutral-700 dark:text-neutral-300">
-              {formatParamValue(param.value, param.type, to)}
+              {formatParamValue(param.value, param.type, to, decoded.parameters)}
             </span>
           </div>
         ))}
@@ -47,9 +47,18 @@ export default function DecodedCalldata({ decoded, rawData, to }: Props) {
   )
 }
 
-function formatParamValue(value: string, type: string, to: string): string {
+function formatParamValue(value: string, type: string, to: string, allParams: DecodedParam[]): string {
   if (type === 'uint256') {
-    const meta = ASSET_METADATA[to.toLowerCase()]
+    // Primary lookup: `to` address is the token contract (e.g. ERC-20 transfer/approve)
+    let meta = ASSET_METADATA[to.toLowerCase()]
+
+    // Secondary lookup: for FundNavFeed calls, the NAV amount is denominated in the
+    // sibling `asset` parameter, not in the contract being called (`to`).
+    if (!meta) {
+      const assetAddr = allParams.find((p) => p.name === 'asset')?.value ?? ''
+      meta = ASSET_METADATA[assetAddr.toLowerCase()]
+    }
+
     if (meta) {
       try {
         const bn = BigInt(value)

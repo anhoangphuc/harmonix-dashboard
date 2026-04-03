@@ -1,5 +1,5 @@
 import { decodeFunctionData } from 'viem'
-import { VAULT_ASSET_ABI } from '@/lib/abis'
+import { VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI } from '@/lib/abis'
 import { ASSET_METADATA } from '@/lib/contracts'
 import { getApiKit } from './api-kit'
 import type { DataDecoded, DecodedParam } from './types'
@@ -34,6 +34,8 @@ export async function decodeTransactionData(
   // ── 2. Local ABI decoding ───────────────────────────────────────────────
   const knownAbis = [
     VAULT_ASSET_ABI,
+    FUND_NAV_FEED_ABI,
+    VAULT_MANAGER_ABI,
     ERC20_ABI,
   ] as const
 
@@ -118,6 +120,47 @@ export function summarizeDecodedData(
     const spender = parameters.find((p) => p.name === 'spender')
     const assetMeta = ASSET_METADATA[to.toLowerCase()]
     return `Approve ${assetMeta?.symbol ?? truncate(to)} for ${truncate(spender?.value ?? '')}`
+  }
+
+  // ── FundNavFeed methods ─────────────────────────────────────────────────
+  if (method === 'syncNavValue') {
+    const asset = parameters.find((p) => p.name === 'asset')?.value ?? ''
+    const desc = parameters.find((p) => p.name === 'description')?.value ?? '?'
+    const nav = parameters.find((p) => p.name === 'nav')?.value ?? '0'
+    const meta = ASSET_METADATA[asset.toLowerCase()]
+    const amount = meta ? formatAmount(nav, meta.decimals) + ' ' + meta.symbol : nav
+    return `Sync NAV — "${desc}" → ${amount}`
+  }
+
+  if (method === 'addNavCategory') {
+    const asset = parameters.find((p) => p.name === 'asset')?.value ?? ''
+    const desc = parameters.find((p) => p.name === 'description')?.value ?? '?'
+    const meta = ASSET_METADATA[asset.toLowerCase()]
+    const label = meta ? meta.symbol : truncate(asset)
+    return `Add NAV category "${desc}" for ${label}`
+  }
+
+  if (method === 'removeNavCategory') {
+    const asset = parameters.find((p) => p.name === 'asset')?.value ?? ''
+    const desc = parameters.find((p) => p.name === 'description')?.value ?? '?'
+    const meta = ASSET_METADATA[asset.toLowerCase()]
+    const label = meta ? meta.symbol : truncate(asset)
+    return `Remove NAV category "${desc}" from ${label}`
+  }
+
+  if (method === 'setCategoryStatus') {
+    const asset = parameters.find((p) => p.name === 'asset')?.value ?? ''
+    const desc = parameters.find((p) => p.name === 'description')?.value ?? '?'
+    const isActive = parameters.find((p) => p.name === 'isActive')?.value
+    const meta = ASSET_METADATA[asset.toLowerCase()]
+    const label = meta ? meta.symbol : truncate(asset)
+    const status = isActive === 'true' ? 'Activate' : 'Deactivate'
+    return `${status} NAV category "${desc}" for ${label}`
+  }
+
+  // ── VaultManager methods ────────────────────────────────────────────────
+  if (method === 'updateNav') {
+    return 'Update NAV — recompute and persist PPS on-chain'
   }
 
   // Generic fallback
