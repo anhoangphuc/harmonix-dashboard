@@ -1,9 +1,19 @@
 import type { VaultOverviewData } from '@/lib/status-reader'
 import { formatTokenAmount } from '@/lib/format'
+import Tooltip from '@/app/components/Tooltip'
 
 const REDEEM_MODE_LABELS: Record<number, string> = {
   0: 'Global',
   1: 'Per Asset',
+}
+
+const COLUMN_TOOLTIPS: Record<string, string> = {
+  'Pending Assets':
+    'Assets that have been requested for withdrawal but not yet fulfilled by the operator.',
+  'Claimable Assets':
+    'Assets that have been fulfilled by the operator and are now ready to be withdrawn from the vault.',
+  'Locked Shares':
+    'Share tokens locked in the vault when requestRedeem was called. They remain locked until the operator fulfills the withdrawal.',
 }
 
 type Props = {
@@ -56,7 +66,7 @@ export default function WithdrawalQueueSummary({
         {cards.map((card) => (
           <div
             key={card.label}
-            className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900"
+            className="rounded-lg border border-neutral-200 bg-white p-4 transition-all duration-150 cursor-default hover:border-neutral-400 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
           >
             <p className="text-sm text-neutral-500 dark:text-neutral-400">{card.label}</p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-neutral-900 dark:text-white">
@@ -69,7 +79,7 @@ export default function WithdrawalQueueSummary({
 
       {/* Per-vault pending/claimable breakdown (only shown if there's something queued) */}
       {vaultRows.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50 text-left dark:border-neutral-700 dark:bg-neutral-800/50">
@@ -78,7 +88,13 @@ export default function WithdrawalQueueSummary({
                     key={col}
                     className="px-4 py-2.5 font-medium text-neutral-500 dark:text-neutral-400"
                   >
-                    {col}
+                    {COLUMN_TOOLTIPS[col] ? (
+                      <Tooltip text={COLUMN_TOOLTIPS[col]} position="bottom" width="w-64">
+                        {col}
+                      </Tooltip>
+                    ) : (
+                      col
+                    )}
                   </th>
                 ))}
               </tr>

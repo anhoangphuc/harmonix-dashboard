@@ -72,10 +72,10 @@ export default function FundSummaryCards({ navSnapshot, pricePerShare, vaults }:
         {cards.map((card) => (
           <div
             key={card.label}
-            className={`rounded-lg border p-4 ${
+            className={`rounded-lg border p-4 transition-all duration-150 cursor-default ${
               card.warn
-                ? 'border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20'
-                : 'border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900'
+                ? 'border-yellow-200 bg-yellow-50 hover:border-yellow-400 hover:bg-yellow-100 dark:border-yellow-800 dark:bg-yellow-900/20 dark:hover:border-yellow-600 dark:hover:bg-yellow-900/40'
+                : 'border-neutral-200 bg-white hover:border-neutral-400 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-500 dark:hover:bg-neutral-800'
             }`}
           >
             <p className="text-sm text-neutral-500 dark:text-neutral-400">{card.label}</p>
