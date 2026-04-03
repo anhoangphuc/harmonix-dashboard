@@ -9,18 +9,21 @@ const REDEEM_MODE_LABELS: Record<number, string> = {
 type Props = {
   queueLength: number
   redeemMode: number
-  globalRedeemShares: string
-  totalPendingAssets: string
-  totalClaimableAssets: string
   vaults: VaultOverviewData[]
 }
 
 export default function WithdrawalQueueSummary({
   queueLength,
   redeemMode,
-  globalRedeemShares,
   vaults,
 }: Props) {
+  // Sum redeemShares from each vault — these are the *currently pending* locked shares.
+  // (getNavSnapshot().globalRedeemShares is a cumulative NAV accounting figure and
+  //  includes already-fulfilled shares, so it should NOT be used here.)
+  const lockedRedeemShares = vaults
+    .reduce((sum, v) => sum + BigInt(v.redeemShares), 0n)
+    .toString()
+
   // Per-vault pending and claimable rows
   const vaultRows = vaults.filter(
     (v) => BigInt(v.pendingAssets) > 0n || BigInt(v.claimableAssets) > 0n,
@@ -34,8 +37,8 @@ export default function WithdrawalQueueSummary({
     },
     {
       label: 'Locked Redeem Shares',
-      value: formatTokenAmount(globalRedeemShares, 18, 2),
-      sub: 'Shares held pending fulfillment',
+      value: formatTokenAmount(lockedRedeemShares, 18, 2),
+      sub: 'Shares currently held pending fulfillment',
     },
     {
       label: 'Redeem Mode',

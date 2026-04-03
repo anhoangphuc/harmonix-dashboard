@@ -43,9 +43,6 @@ export default function StatusClient({ data }: { data: FundStatusData }) {
       <WithdrawalQueueSummary
         queueLength={data.redeemQueueLength}
         redeemMode={data.redeemMode}
-        globalRedeemShares={data.navSnapshot.globalRedeemShares}
-        totalPendingAssets={data.totalPendingAssets}
-        totalClaimableAssets={data.totalClaimableAssets}
         vaults={data.vaults}
       />
 
