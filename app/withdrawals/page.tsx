@@ -29,7 +29,7 @@ export default async function WithdrawalsPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10">
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex items-start gap-3">
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Withdrawals</h1>
         <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-sm font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
           {withdrawals.length}
