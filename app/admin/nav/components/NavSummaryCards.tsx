@@ -1,3 +1,6 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import { formatTokenAmount, formatDenomination } from '@/lib/format'
 import type { NavPageData } from '@/lib/nav-reader'
 
@@ -12,18 +15,33 @@ function ppsDelta(live: string, stored: string): { pct: string; positive: boolea
   return { pct: `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`, positive: pct >= 0 }
 }
 
+/**
+ * Renders the "Last updated" timestamp only after mount so that
+ * toLocaleString() never runs on the server — eliminates the SSR/client
+ * locale mismatch hydration error.
+ */
+function LastUpdated({ lastNavUpdated }: { lastNavUpdated: string }) {
+  const [label, setLabel] = useState<string>('—')
+
+  useEffect(() => {
+    if (lastNavUpdated === '0') {
+      setLabel('Never')
+    } else {
+      setLabel(`Last updated: ${new Date(Number(lastNavUpdated) * 1000).toLocaleString()}`)
+    }
+  }, [lastNavUpdated])
+
+  return <>{label}</>
+}
+
 export default function NavSummaryCards({ data }: Props) {
   const delta = ppsDelta(data.livePpsValue, data.storedPps)
-
-  const lastUpdatedDate = data.lastNavUpdated !== '0'
-    ? new Date(Number(data.lastNavUpdated) * 1000).toLocaleString()
-    : 'Never'
 
   const cards = [
     {
       label: 'Stored PPS',
       value: formatTokenAmount(data.storedPps, 18, 6),
-      sub: `Last updated: ${lastUpdatedDate}`,
+      sub: <LastUpdated lastNavUpdated={data.lastNavUpdated} />,
       warn: false,
     },
     {
