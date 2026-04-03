@@ -46,6 +46,12 @@ export default function RootLayout({
               >
                 Withdrawals
               </Link>
+              <Link
+                href="/safe-transactions"
+                className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              >
+                Safe Transactions
+              </Link>
               <div className="ml-auto">
                 <ConnectWallet />
               </div>

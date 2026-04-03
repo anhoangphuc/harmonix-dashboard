@@ -1,14 +1,19 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect } from 'react'
-import { useWriteContract, useWaitForTransactionReceipt, useConnection } from 'wagmi'
+import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi'
+import { encodeFunctionData, getAddress } from 'viem'
 import { VAULT_ASSET_ABI } from '@/lib/abis'
 import { ASSET_METADATA } from '@/lib/contracts'
+import { useProposeSafeTransaction } from '@/lib/safe/hooks'
+import type { SafeInfo } from '@/lib/safe/types'
 import type { Withdrawal } from '@/lib/vault-reader'
 
 type Props = {
   selected: Withdrawal[]
   vaultAssetMap: Record<string, string>
+  safeInfo: SafeInfo | undefined
   onSuccess: () => void
 }
 
@@ -23,39 +28,45 @@ function formatUnits(value: string, decimals: number): string {
   return `${whole.toLocaleString()}.${fracStr}`
 }
 
-export default function FulfillPanel({ selected, vaultAssetMap, onSuccess }: Props) {
-  const { isConnected, chainId } = useConnection()
-  const { writeContract, data: txHash, isPending: isWritePending, error, reset } = useWriteContract()
+export default function FulfillPanel({ selected, vaultAssetMap, safeInfo, onSuccess }: Props) {
+  const { address, isConnected, chainId } = useAccount()
+
+  // ── Direct EOA fulfill ──────────────────────────────────────────────────
+  const { writeContract, data: txHash, isPending: isWritePending, error: writeError, reset } = useWriteContract()
   const { isLoading: isConfirming, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
     query: { enabled: Boolean(txHash) },
   })
-  // Guard: only treat as confirmed if we actually submitted a tx
-  const isSuccess = Boolean(txHash) && isTxSuccess
+  const isDirectSuccess = Boolean(txHash) && isTxSuccess
 
-  // Auto-dismiss and refresh on confirmation
   useEffect(() => {
-    if (isSuccess) {
-      const timer = setTimeout(() => {
-        reset()
-        onSuccess()
-      }, 1000)
-      return () => clearTimeout(timer)
+    if (isDirectSuccess) {
+      const t = setTimeout(() => { reset(); onSuccess() }, 1000)
+      return () => clearTimeout(t)
     }
-  }, [isSuccess, onSuccess, reset])
+  }, [isDirectSuccess, onSuccess, reset])
+
+  // ── Safe propose ────────────────────────────────────────────────────────
+  const proposeTx = useProposeSafeTransaction()
 
   if (selected.length === 0) return null
 
-  const vaultAddress = selected[0].vault as `0x${string}`
+  // Checksum all addresses — Safe Transaction Service requires EIP-55 format
+  const vaultAddress = getAddress(selected[0].vault) as `0x${string}`
   const assetAddr = vaultAssetMap[selected[0].vault]
   const meta = assetAddr ? ASSET_METADATA[assetAddr] : undefined
 
   const totalAmount = selected.reduce((sum, w) => sum + BigInt(w.assets), 0n)
-  const controllers = selected.map((w) => w.controller as `0x${string}`)
+  const controllers = selected.map((w) => getAddress(w.controller) as `0x${string}`)
 
   const isWrongChain = isConnected && chainId !== 999
+  const isOwner = Boolean(address && safeInfo?.owners.some(
+    (o) => o.toLowerCase() === address.toLowerCase(),
+  ))
 
-  function handleFulfill() {
+  // ── Handlers ────────────────────────────────────────────────────────────
+
+  function handleDirectFulfill() {
     reset()
     writeContract({
       address: vaultAddress,
@@ -65,39 +76,85 @@ export default function FulfillPanel({ selected, vaultAssetMap, onSuccess }: Pro
     })
   }
 
-  // Derive button label + disabled state
-  let buttonLabel: string
-  let buttonDisabled = false
-  let buttonClass = 'bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200'
+  function handleProposeSafe() {
+    proposeTx.reset()
+    const data = encodeFunctionData({
+      abi: VAULT_ASSET_ABI,
+      functionName: 'fulfillRedeem',
+      args: [totalAmount, controllers],
+    })
+    proposeTx.mutate({ to: vaultAddress, data })
+  }
+
+  // ── Derived state for the direct-fulfill button ─────────────────────────
+
+  let directLabel: string
+  let directDisabled = false
+  let directClass = 'bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200'
 
   if (!isConnected) {
-    buttonLabel = 'Connect wallet to fulfill'
-    buttonDisabled = true
-    buttonClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
+    directLabel = 'Connect wallet'
+    directDisabled = true
+    directClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
   } else if (isWrongChain) {
-    buttonLabel = 'Wrong network'
-    buttonDisabled = true
-    buttonClass = 'bg-amber-100 text-amber-600 cursor-not-allowed dark:bg-amber-900/30 dark:text-amber-400'
+    directLabel = 'Wrong network'
+    directDisabled = true
+    directClass = 'bg-amber-100 text-amber-600 cursor-not-allowed dark:bg-amber-900/30 dark:text-amber-400'
   } else if (isWritePending) {
-    buttonLabel = 'Confirm in wallet…'
-    buttonDisabled = true
+    directLabel = 'Confirm in wallet…'
+    directDisabled = true
   } else if (isConfirming) {
-    buttonLabel = 'Processing…'
-    buttonDisabled = true
-  } else if (isSuccess) {
-    buttonLabel = '✓ Fulfilled'
-    buttonDisabled = true
-    buttonClass = 'bg-green-600 text-white cursor-not-allowed'
-  } else if (error) {
-    buttonLabel = 'Failed — Retry'
-    buttonClass = 'bg-red-600 text-white hover:bg-red-700'
+    directLabel = 'Processing…'
+    directDisabled = true
+  } else if (isDirectSuccess) {
+    directLabel = '✓ Fulfilled'
+    directDisabled = true
+    directClass = 'bg-green-600 text-white cursor-not-allowed'
+  } else if (writeError) {
+    directLabel = 'Failed — Retry'
+    directClass = 'bg-red-600 text-white hover:bg-red-700'
   } else {
-    buttonLabel = `Fulfill ${selected.length} Request${selected.length > 1 ? 's' : ''}`
+    directLabel = `Fulfill ${selected.length} Request${selected.length > 1 ? 's' : ''}`
   }
+
+  // ── Derived state for the Safe-propose button ───────────────────────────
+
+  let safeLabel: string
+  let safeDisabled = false
+  let safeClass = 'bg-blue-600 text-white hover:bg-blue-700'
+
+  if (!isConnected) {
+    safeLabel = 'Connect wallet'
+    safeDisabled = true
+    safeClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
+  } else if (isWrongChain) {
+    safeLabel = 'Wrong network'
+    safeDisabled = true
+    safeClass = 'bg-amber-100 text-amber-600 cursor-not-allowed'
+  } else if (!isOwner) {
+    safeLabel = 'Not a Safe owner'
+    safeDisabled = true
+    safeClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
+  } else if (proposeTx.isPending) {
+    safeLabel = 'Confirm in wallet…'
+    safeDisabled = true
+  } else if (proposeTx.isSuccess) {
+    safeLabel = '✓ Proposed'
+    safeDisabled = true
+    safeClass = 'bg-green-600 text-white cursor-not-allowed'
+  } else if (proposeTx.isError) {
+    safeLabel = 'Failed — Retry'
+    safeClass = 'bg-red-600 text-white hover:bg-red-700'
+  } else {
+    safeLabel = `Propose via Safe`
+  }
+
+  const isBusy = isWritePending || isConfirming || proposeTx.isPending
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-neutral-200 bg-white px-4 py-3 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-      <div className="mx-auto flex max-w-7xl items-center gap-4">
+      <div className="mx-auto flex max-w-7xl items-center gap-4 flex-wrap">
+
         {/* Selection summary */}
         <div className="flex items-center gap-3 text-sm">
           <span className="font-medium text-neutral-900 dark:text-white">
@@ -121,33 +178,59 @@ export default function FulfillPanel({ selected, vaultAssetMap, onSuccess }: Pro
           )}
         </div>
 
-        <div className="ml-auto flex items-center gap-3">
-          {/* Error message */}
-          {error && (
-            <span className="max-w-xs truncate text-xs text-red-600 dark:text-red-400" title={error.message}>
-              {error.message.slice(0, 60)}…
+        <div className="ml-auto flex items-center gap-3 flex-wrap">
+          {/* Error messages — full text in tooltip, truncated on screen */}
+          {writeError && (
+            <span
+              className="max-w-xs truncate text-xs text-red-600 dark:text-red-400 cursor-help"
+              title={writeError.message}
+            >
+              {writeError.message}
+            </span>
+          )}
+          {proposeTx.error && (
+            <span
+              className="max-w-xs truncate text-xs text-red-600 dark:text-red-400 cursor-help"
+              title={proposeTx.error.message}
+            >
+              {proposeTx.error.message}
             </span>
           )}
 
-          {/* Spinner for processing state */}
-          {(isWritePending || isConfirming) && (
-            <svg
-              className="h-4 w-4 animate-spin text-neutral-500"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
+          {/* Spinner */}
+          {isBusy && (
+            <svg className="h-4 w-4 animate-spin text-neutral-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
             </svg>
           )}
 
+          {/* Success link to Safe Transactions page */}
+          {proposeTx.isSuccess && (
+            <Link
+              href="/safe-transactions"
+              className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+            >
+              View pending →
+            </Link>
+          )}
+
+          {/* Propose via Safe (primary when wallet is a Safe owner) */}
           <button
-            onClick={handleFulfill}
-            disabled={buttonDisabled}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${buttonClass}`}
+            onClick={handleProposeSafe}
+            disabled={safeDisabled}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${safeClass}`}
           >
-            {buttonLabel}
+            {safeLabel}
+          </button>
+
+          {/* Direct fulfill (secondary — for non-multisig operators) */}
+          <button
+            onClick={handleDirectFulfill}
+            disabled={directDisabled}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${directClass}`}
+          >
+            {directLabel}
           </button>
         </div>
       </div>
