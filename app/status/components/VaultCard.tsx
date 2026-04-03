@@ -7,9 +7,9 @@ type Props = { vault: VaultOverviewData }
 export default function VaultCard({ vault }: Props) {
   const d = vault.decimals
   const idle = BigInt(vault.idleAssets)
-  const deployed = BigInt(vault.deployedAssets)
   const pending = BigInt(vault.pendingAssets)
   const claimable = BigInt(vault.claimableAssets)
+  const fundNav = BigInt(vault.fundNavBalance)
   const redeemShares = BigInt(vault.redeemShares)
 
   const hasRedemptions = pending > 0n || claimable > 0n || redeemShares > 0n
@@ -65,9 +65,9 @@ export default function VaultCard({ vault }: Props) {
         <p className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">
           Capital Distribution
         </p>
-        <CapitalBreakdownBar idle={idle} deployed={deployed} />
+        <CapitalBreakdownBar idle={idle} claimable={claimable} pending={pending} fundNav={fundNav} />
 
-        <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
               <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
@@ -80,10 +80,28 @@ export default function VaultCard({ vault }: Props) {
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
               <span className="inline-block h-2 w-2 rounded-full bg-blue-500" />
-              Deployed
+              Claimable
             </span>
             <span className="tabular-nums text-neutral-900 dark:text-white">
-              {formatTokenAmount(vault.deployedAssets, d, 4)} {vault.symbol}
+              {formatTokenAmount(vault.claimableAssets, d, 4)} {vault.symbol}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+              <span className="inline-block h-2 w-2 rounded-full bg-yellow-400" />
+              Pending
+            </span>
+            <span className="tabular-nums text-neutral-900 dark:text-white">
+              {formatTokenAmount(vault.pendingAssets, d, 4)} {vault.symbol}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
+              <span className="inline-block h-2 w-2 rounded-full bg-violet-500" />
+              Fund NAV
+            </span>
+            <span className="tabular-nums text-neutral-900 dark:text-white">
+              {formatTokenAmount(vault.fundNavBalance, d, 4)} {vault.symbol}
             </span>
           </div>
         </div>

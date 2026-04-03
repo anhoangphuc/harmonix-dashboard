@@ -1,5 +1,5 @@
 import { createPublicClient, http } from 'viem'
-import { HA_VAULT_READER_ADDRESS, HA_VAULT_READER_ABI, ASSET_METADATA } from './contracts'
+import { HA_VAULT_READER_ADDRESS, HA_VAULT_READER_ABI, ASSET_METADATA, FUND_NAV_FEED_ADDRESS, FUND_NAV_FEED_ABI } from './contracts'
 import { hyperEvmMainnet } from './wagmi-config'
 
 const publicClient = createPublicClient({
@@ -38,6 +38,8 @@ export type VaultOverviewData = {
   vaultAssetBalance: string
   // Current asset token balance held by the FundVault contract
   fundVaultBalance: string
+  // NAV value reported by the FundNavFeed contract per asset
+  fundNavBalance: string
   // NAV
   navAsset: string
   navDenomination: string
@@ -76,7 +78,7 @@ export type FundStatusData = {
 
 // ─── Typed readContract helper ────────────────────────────────────────────────
 
-function read<F extends 'getAllVaultOverviews' | 'getNavSnapshot' | 'getRedeemQueueLength' | 'getRedeemMode' | 'getPricePerShare' | 'getFundVault'>(
+function read<F extends 'getAllVaultOverviews' | 'getNavSnapshot' | 'getRedeemQueueLength' | 'getRedeemMode' | 'getPricePerShare' | 'getFundVault' | 'getFundNav'>(
   functionName: F,
 ): ReturnType<typeof publicClient.readContract>
 function read<F extends 'getIdleAssets' | 'getTotalManagedAssets' | 'getStrategies' | 'getAllocated'>(
@@ -104,7 +106,7 @@ function read(functionName: string, args?: unknown[]) {
  */
 export async function getFundStatus(): Promise<FundStatusData> {
   // ── Batch 1: global state (all in parallel) ───────────────────────────────
-  const [overviews, nav, queueLen, redeemMode, pps, fundVaultAddress] = await Promise.all([
+  const [overviews, nav, queueLen, redeemMode, pps, fundVaultAddress, fundNavAddress] = await Promise.all([
     read('getAllVaultOverviews') as Promise<readonly {
       vault: `0x${string}`
       asset: `0x${string}`
@@ -128,12 +130,13 @@ export async function getFundStatus(): Promise<FundStatusData> {
     read('getRedeemMode') as Promise<number>,
     read('getPricePerShare') as Promise<bigint>,
     read('getFundVault') as Promise<`0x${string}`>,
+    read('getFundNav') as Promise<`0x${string}`>,
   ])
 
   const assets = overviews.map((o) => o.asset)
 
   // ── Batch 2: per-asset capital breakdown + vault asset balances (all in parallel) ──
-  const [idleAmounts, totalManagedAmounts, strategyLists, vaultAssetBalances, fundVaultBalances] = assets.length > 0
+  const [idleAmounts, totalManagedAmounts, strategyLists, vaultAssetBalances, fundVaultBalances, fundNavBalances] = assets.length > 0
     ? await Promise.all([
         Promise.all(assets.map((asset) => read('getIdleAssets', [asset]) as Promise<bigint>)),
         Promise.all(assets.map((asset) => read('getTotalManagedAssets', [asset]) as Promise<bigint>)),
@@ -156,8 +159,17 @@ export async function getFundStatus(): Promise<FundStatusData> {
             args: [fundVaultAddress],
           }) as Promise<bigint>
         )),
+        // fundNavValue(asset) — NAV tracked in FundNavFeed per asset
+        Promise.all(overviews.map((o) =>
+          publicClient.readContract({
+            address: FUND_NAV_FEED_ADDRESS,
+            abi: FUND_NAV_FEED_ABI,
+            functionName: 'fundNavValue',
+            args: [o.asset],
+          }) as Promise<bigint>
+        )),
       ])
-    : [[], [], [], [], []]
+    : [[], [], [], [], [], []]
 
   // ── Batch 3: per-strategy allocations (all in parallel) ──────────────────
   const allStrategies = (strategyLists as unknown as `0x${string}`[][]).flat()
@@ -179,6 +191,7 @@ export async function getFundStatus(): Promise<FundStatusData> {
     const deployed = totalManaged > idle ? totalManaged - idle : 0n
     const vaultAssetBalance: bigint = (vaultAssetBalances as bigint[])[i] ?? 0n
     const fundVaultBalance: bigint = (fundVaultBalances as bigint[])[i] ?? 0n
+    const fundNavBalance: bigint = (fundNavBalances as bigint[])[i] ?? 0n
 
     const vaultStrategyList = ((strategyLists as unknown as `0x${string}`[][])[i] ?? []) as `0x${string}`[]
     const strategies: StrategyAllocation[] = vaultStrategyList.map((addr) => ({
@@ -196,6 +209,7 @@ export async function getFundStatus(): Promise<FundStatusData> {
       pendingAssets: o.pendingAssets.toString(),
       vaultAssetBalance: vaultAssetBalance.toString(),
       fundVaultBalance: fundVaultBalance.toString(),
+      fundNavBalance: fundNavBalance.toString(),
       navAsset: o.navAsset.toString(),
       navDenomination: o.navDenomination.toString(),
       isPaused: o.isPaused,
