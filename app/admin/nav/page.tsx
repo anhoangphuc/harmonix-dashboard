@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { getNavPageData } from '@/lib/nav-reader'
-import RefreshButton from '@/app/withdrawals/components/RefreshButton'
 import NavClient from './components/NavClient'
 
 export const dynamic = 'force-dynamic'
@@ -31,14 +30,6 @@ export default async function NavPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10">
-      <div className="mb-6 flex items-center gap-3">
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">
-          NAV Management
-        </h1>
-        <div className="ml-auto">
-          <RefreshButton />
-        </div>
-      </div>
       <NavClient data={data} />
     </main>
   )
