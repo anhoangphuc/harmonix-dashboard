@@ -1,0 +1,176 @@
+import { createPublicClient, http } from 'viem'
+import {
+  HA_VAULT_READER_ADDRESS,
+  HA_VAULT_READER_ABI,
+  FUND_NAV_FEED_ADDRESS,
+  FUND_NAV_FEED_ABI,
+  VAULT_MANAGER_ABI,
+  ASSET_METADATA,
+} from './contracts'
+import { hyperEvmMainnet } from './wagmi-config'
+
+const publicClient = createPublicClient({
+  chain: hyperEvmMainnet,
+  transport: http(),
+})
+
+// ─── Serialisable output types (no bigints) ───────────────────────────────────
+
+export type NavCategoryData = {
+  description: string
+  isActive: boolean
+  nav: string // raw integer string
+}
+
+export type AssetNavData = {
+  asset: string
+  symbol: string
+  decimals: number
+  // Stored per-asset NAV from last updateNav() call
+  storedNav: string
+  storedDenomination: string
+  // Live off-chain NAV total from FundNavFeed
+  offChainNav: string
+  // Individual NAV categories from FundNavFeed
+  categories: NavCategoryData[]
+}
+
+export type NavPageData = {
+  // Addresses
+  vaultManagerAddress: string
+  fundNavFeedAddress: string
+  // Live computed NAV snapshot
+  liveNavDenomination: string
+  liveEffNavDenomination: string
+  livePpsValue: string
+  liveIsValidPps: boolean
+  // Stored (last updateNav()) values
+  storedPps: string
+  lastNavUpdated: string // seconds timestamp as string
+  // Per-asset breakdown
+  assets: AssetNavData[]
+  fetchedAt: number // Date.now()
+}
+
+// ─── Main fetch function ──────────────────────────────────────────────────────
+
+export async function getNavPageData(): Promise<NavPageData> {
+  // ── Step 1: discover VaultManager address from FundNavFeed ────────────────
+  const vaultManagerAddress = await publicClient.readContract({
+    address: FUND_NAV_FEED_ADDRESS,
+    abi: FUND_NAV_FEED_ABI,
+    functionName: 'vaultManager',
+  }) as `0x${string}`
+
+  // ── Batch 2: global state (all in parallel) ───────────────────────────────
+  const [navSnapshot, registeredAssets, storedPps, lastNavUpdatedValue] = await Promise.all([
+    publicClient.readContract({
+      address: HA_VAULT_READER_ADDRESS,
+      abi: HA_VAULT_READER_ABI,
+      functionName: 'getNavSnapshot',
+    }) as Promise<{
+      totalSupply: bigint
+      navDenomination: bigint
+      effNavDenomination: bigint
+      globalRedeemShares: bigint
+      assetTotalNavs: readonly bigint[]
+      ppsValue: bigint
+      isValidPps: boolean
+    }>,
+    publicClient.readContract({
+      address: HA_VAULT_READER_ADDRESS,
+      abi: HA_VAULT_READER_ABI,
+      functionName: 'getRegisteredAssets',
+    }) as Promise<readonly `0x${string}`[]>,
+    publicClient.readContract({
+      address: HA_VAULT_READER_ADDRESS,
+      abi: HA_VAULT_READER_ABI,
+      functionName: 'getPricePerShare',
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: vaultManagerAddress,
+      abi: VAULT_MANAGER_ABI,
+      functionName: 'lastNavUpdated',
+    }) as Promise<bigint>,
+  ])
+
+  // ── Batch 3: per-asset data (all in parallel) ─────────────────────────────
+  const assetList = [...registeredAssets]
+
+  const [storedNavData, offChainNavs, categoriesPerAsset] = assetList.length > 0
+    ? await Promise.all([
+        // Stored per-asset navs and denominations from HaVaultReader
+        Promise.all(
+          assetList.map((asset) =>
+            publicClient.readContract({
+              address: HA_VAULT_READER_ADDRESS,
+              abi: HA_VAULT_READER_ABI,
+              functionName: 'getAssetNavAndDenomination',
+              args: [asset],
+            }) as Promise<readonly [bigint, bigint]>
+          ),
+        ),
+        // Off-chain NAV totals from FundNavFeed (single-asset overload)
+        Promise.all(
+          assetList.map((asset) =>
+            publicClient.readContract({
+              address: FUND_NAV_FEED_ADDRESS,
+              abi: FUND_NAV_FEED_ABI,
+              functionName: 'fundNavValue',
+              args: [asset],
+            }) as Promise<bigint>
+          ),
+        ),
+        // Categories per asset
+        Promise.all(
+          assetList.map((asset) =>
+            publicClient.readContract({
+              address: FUND_NAV_FEED_ADDRESS,
+              abi: FUND_NAV_FEED_ABI,
+              functionName: 'categories',
+              args: [asset],
+            }) as Promise<readonly { isActive: boolean; description: string; nav: bigint }[]>
+          ),
+        ),
+      ])
+    : [[], [], []]
+
+  // ── Assemble per-asset data ───────────────────────────────────────────────
+  const assets: AssetNavData[] = assetList.map((asset, i) => {
+    const assetAddr = asset.toLowerCase()
+    const meta = ASSET_METADATA[assetAddr] ?? { symbol: assetAddr.slice(0, 10), decimals: 18 }
+
+    const [storedNav, storedDenomination] = ((storedNavData as unknown) as [bigint, bigint][])[i] ?? [0n, 0n]
+    const offChainNav = (offChainNavs as bigint[])[i] ?? 0n
+    const rawCategories = ((categoriesPerAsset as unknown) as { isActive: boolean; description: string; nav: bigint }[][])[i] ?? []
+
+    const categories: NavCategoryData[] = rawCategories.map((cat) => ({
+      description: cat.description,
+      isActive: cat.isActive,
+      nav: cat.nav.toString(),
+    }))
+
+    return {
+      asset: assetAddr,
+      symbol: meta.symbol,
+      decimals: meta.decimals,
+      storedNav: storedNav.toString(),
+      storedDenomination: storedDenomination.toString(),
+      offChainNav: offChainNav.toString(),
+      categories,
+    }
+  })
+
+  return {
+    vaultManagerAddress: vaultManagerAddress.toLowerCase(),
+    fundNavFeedAddress: FUND_NAV_FEED_ADDRESS.toLowerCase(),
+    liveNavDenomination: navSnapshot.navDenomination.toString(),
+    liveEffNavDenomination: navSnapshot.effNavDenomination.toString(),
+    livePpsValue: navSnapshot.ppsValue.toString(),
+    liveIsValidPps: navSnapshot.isValidPps,
+    storedPps: storedPps.toString(),
+    lastNavUpdated: lastNavUpdatedValue.toString(),
+    assets,
+    fetchedAt: Date.now(),
+  }
+}

@@ -59,10 +59,10 @@ export default function RootLayout({
                 Status
               </Link>
               <Link
-                href="/safe-transactions"
+                href="/admin/nav"
                 className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
               >
-                Safe Transactions
+                NAV Management
               </Link>
               <div className="ml-auto">
                 <ConnectWallet />
