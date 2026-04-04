@@ -44,6 +44,8 @@ export default function StatusClient({ data }: { data: FundStatusData }) {
         queueLength={data.redeemQueueLength}
         redeemMode={data.redeemMode}
         vaults={data.vaults}
+        redeemActiveCount={data.redeemActiveCount}
+        redeemFulfilledCount={data.redeemFulfilledCount}
       />
 
       <div>

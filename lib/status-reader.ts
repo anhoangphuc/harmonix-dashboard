@@ -1,6 +1,7 @@
 import { createPublicClient, http } from 'viem'
 import { HA_VAULT_READER_ADDRESS, HA_VAULT_READER_ABI, ASSET_METADATA, FUND_NAV_FEED_ADDRESS, FUND_NAV_FEED_ABI } from './contracts'
 import { hyperEvmMainnet } from './wagmi-config'
+import { getAllWithdrawals } from './vault-reader'
 
 const publicClient = createPublicClient({
   chain: hyperEvmMainnet,
@@ -73,6 +74,9 @@ export type FundStatusData = {
   totalClaimableAssets: string
   totalRedeemShares: string
   pausedVaultCount: number
+  // Queue breakdown — only entries where shares > 0
+  redeemActiveCount: number    // shares > 0 && !isFulfilled
+  redeemFulfilledCount: number // shares > 0 && isFulfilled
   fetchedAt: number // Date.now() — used by client for "updated Xs ago" display
 }
 
@@ -106,7 +110,7 @@ function read(functionName: string, args?: unknown[]) {
  */
 export async function getFundStatus(): Promise<FundStatusData> {
   // ── Batch 1: global state (all in parallel) ───────────────────────────────
-  const [overviews, nav, queueLen, redeemMode, pps, fundVaultAddress, fundNavAddress] = await Promise.all([
+  const [overviews, nav, queueLen, redeemMode, pps, fundVaultAddress, fundNavAddress, allWithdrawals] = await Promise.all([
     read('getAllVaultOverviews') as Promise<readonly {
       vault: `0x${string}`
       asset: `0x${string}`
@@ -131,6 +135,7 @@ export async function getFundStatus(): Promise<FundStatusData> {
     read('getPricePerShare') as Promise<bigint>,
     read('getFundVault') as Promise<`0x${string}`>,
     read('getFundNav') as Promise<`0x${string}`>,
+    getAllWithdrawals(),
   ])
 
   const assets = overviews.map((o) => o.asset)
@@ -231,6 +236,14 @@ export async function getFundStatus(): Promise<FundStatusData> {
     .reduce((sum, o) => sum + o.redeemShares, 0n)
     .toString()
 
+  // Queue breakdown — only entries where shares > 0 are meaningful
+  const redeemActiveCount = allWithdrawals.filter(
+    (w) => BigInt(w.shares) > 0n && !w.isFulfilled,
+  ).length
+  const redeemFulfilledCount = allWithdrawals.filter(
+    (w) => BigInt(w.shares) > 0n && w.isFulfilled,
+  ).length
+
   return {
     vaults,
     navSnapshot: {
@@ -249,6 +262,8 @@ export async function getFundStatus(): Promise<FundStatusData> {
     totalClaimableAssets,
     totalRedeemShares,
     pausedVaultCount: vaults.filter((v) => v.isPaused).length,
+    redeemActiveCount,
+    redeemFulfilledCount,
     fetchedAt: Date.now(),
   }
 }

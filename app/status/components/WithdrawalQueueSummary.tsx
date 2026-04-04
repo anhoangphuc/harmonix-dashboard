@@ -23,12 +23,16 @@ type Props = {
   queueLength: number
   redeemMode: number
   vaults: VaultOverviewData[]
+  redeemActiveCount: number
+  redeemFulfilledCount: number
 }
 
 export default function WithdrawalQueueSummary({
   queueLength,
   redeemMode,
   vaults,
+  redeemActiveCount,
+  redeemFulfilledCount,
 }: Props) {
   // Sum redeemShares from each vault — these are the *currently pending* locked shares.
   // (getNavSnapshot().globalRedeemShares is a cumulative NAV accounting figure and
@@ -48,8 +52,24 @@ export default function WithdrawalQueueSummary({
   const cards = [
     {
       label: 'Queue Length',
-      value: queueLength.toLocaleString(),
-      sub: 'Total requests ever submitted',
+      custom: (
+        <div className="mt-1 flex items-end gap-3">
+          <div>
+            <p className="text-xl font-semibold tabular-nums text-neutral-900 dark:text-white">
+              {redeemActiveCount.toLocaleString()}
+            </p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">pending</p>
+          </div>
+          <span className="mb-5 text-neutral-300 dark:text-neutral-600">/</span>
+          <div>
+            <p className="text-xl font-semibold tabular-nums text-neutral-500 dark:text-neutral-400">
+              {redeemFulfilledCount.toLocaleString()}
+            </p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-neutral-500">fulfilled</p>
+          </div>
+        </div>
+      ),
+      sub: 'Requests with shares > 0',
     },
     {
       label: 'Locked Redeem Shares',
@@ -75,9 +95,14 @@ export default function WithdrawalQueueSummary({
             className="rounded-lg border border-neutral-200 bg-white p-4 transition-all duration-150 cursor-default hover:border-neutral-400 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
           >
             <p className="text-sm text-neutral-500 dark:text-neutral-400">{card.label}</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-neutral-900 dark:text-white">
-              {card.value}
-            </p>
+            {'custom' in card
+              ? card.custom
+              : (
+                <p className="mt-1 text-xl font-semibold tabular-nums text-neutral-900 dark:text-white">
+                  {card.value}
+                </p>
+              )
+            }
             <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">{card.sub}</p>
           </div>
         ))}
