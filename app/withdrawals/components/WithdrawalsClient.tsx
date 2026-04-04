@@ -197,8 +197,13 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
                       checked
                         ? 'bg-blue-50 dark:bg-blue-950/30'
                         : selectable
+                          // Tier 1 — shares > 0, pending: full brightness
                           ? 'bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800/50'
-                          : 'bg-white opacity-50 dark:bg-neutral-900',
+                          : BigInt(w.shares) > 0n
+                            // Tier 2 — shares > 0, fulfilled: medium dim
+                            ? 'bg-white opacity-60 dark:bg-neutral-900'
+                            // Tier 3 — shares = 0: most faded
+                            : 'bg-white opacity-30 dark:bg-neutral-900',
                     ].join(' ')}
                   >
                     {/* Checkbox */}
