@@ -1,5 +1,5 @@
 import { decodeFunctionData } from 'viem'
-import { VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI } from '@/lib/abis'
+import { VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI, FUND_VAULT_ABI } from '@/lib/abis'
 import { ASSET_METADATA } from '@/lib/contracts'
 import { getApiKit } from './api-kit'
 import type { DataDecoded, DecodedParam } from './types'
@@ -36,6 +36,7 @@ export async function decodeTransactionData(
     VAULT_ASSET_ABI,
     FUND_NAV_FEED_ABI,
     VAULT_MANAGER_ABI,
+    FUND_VAULT_ABI,
     ERC20_ABI,
   ] as const
 
@@ -161,6 +162,35 @@ export function summarizeDecodedData(
   // ── VaultManager methods ────────────────────────────────────────────────
   if (method === 'updateNav') {
     return 'Update NAV — recompute and persist PPS on-chain'
+  }
+
+  // ── FundVault methods ──────────────────────────────────────────────────
+  if (method === 'addStrategy') {
+    const strategy = parameters.find((p) => p.name === 'strategy')?.value ?? ''
+    return `Add strategy ${truncate(strategy)}`
+  }
+
+  if (method === 'removeStrategy') {
+    const strategy = parameters.find((p) => p.name === 'strategy')?.value ?? ''
+    return `Remove strategy ${truncate(strategy)}`
+  }
+
+  if (method === 'setStrategyCap') {
+    const strategy = parameters.find((p) => p.name === 'strategy')?.value ?? ''
+    const cap = parameters.find((p) => p.name === 'cap')?.value ?? '0'
+    return `Set cap for ${truncate(strategy)} → ${cap}`
+  }
+
+  if (method === 'allocate') {
+    const strategy = parameters.find((p) => p.name === 'strategy')?.value ?? ''
+    const amount = parameters.find((p) => p.name === 'amount')?.value ?? '0'
+    return `Allocate ${amount} to strategy ${truncate(strategy)}`
+  }
+
+  if (method === 'deallocate') {
+    const strategy = parameters.find((p) => p.name === 'strategy')?.value ?? ''
+    const amount = parameters.find((p) => p.name === 'amount')?.value ?? '0'
+    return `Deallocate ${amount} from strategy ${truncate(strategy)}`
   }
 
   // Generic fallback
