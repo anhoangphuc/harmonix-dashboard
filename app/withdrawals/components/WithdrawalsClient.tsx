@@ -7,6 +7,7 @@ import { useSafeInfo } from '@/lib/safe/hooks'
 import type { SafeInfo } from '@/lib/safe/types'
 import FilterBar, { StatusFilter, AssetOption } from './FilterBar'
 import FulfillPanel from './FulfillPanel'
+import CancelPanel from './CancelPanel'
 import type { Withdrawal } from '@/lib/vault-reader'
 
 type Props = {
@@ -53,6 +54,7 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
   const [endDate, setEndDate] = useState('')
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [mode, setMode] = useState<'fulfill' | 'cancel'>('fulfill')
 
   const assetOptions = useMemo<AssetOption[]>(() => {
     const seen = new Set<string>()
@@ -97,6 +99,11 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
     setSelectedIds(new Set())
   }, [status, startDate, endDate, selectedAssets])
 
+  // Clear row selection when mode changes
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [mode])
+
   // The vault all selected rows must belong to (locked once first row is picked)
   const lockedVault = useMemo(() => {
     if (selectedIds.size === 0) return null
@@ -104,7 +111,8 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
   }, [selectedIds, filtered])
 
   function isSelectable(w: Withdrawal): boolean {
-    if (w.isFulfilled || BigInt(w.shares) === 0n) return false
+    if (BigInt(w.shares) === 0n) return false
+    if (mode === 'fulfill' && w.isFulfilled) return false
     if (lockedVault && w.vault !== lockedVault) return false
     return true
   }
@@ -147,6 +155,30 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
         onAssetToggle={handleAssetToggle}
         onClear={() => { setStatus('all'); setStartDate(''); setEndDate(''); setSelectedAssets(new Set()) }}
       />
+
+      {/* Action mode toggle */}
+      <div className="flex gap-1 rounded-lg border border-neutral-200 p-1 w-fit dark:border-neutral-700">
+        <button
+          onClick={() => setMode('fulfill')}
+          className={
+            mode === 'fulfill'
+              ? 'rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white'
+              : 'rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'
+          }
+        >
+          Fulfill
+        </button>
+        <button
+          onClick={() => setMode('cancel')}
+          className={
+            mode === 'cancel'
+              ? 'rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white'
+              : 'rounded-md px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'
+          }
+        >
+          Cancel
+        </button>
+      </div>
 
       {/* Summary */}
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -197,10 +229,10 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
                       checked
                         ? 'bg-blue-50 dark:bg-blue-950/30'
                         : selectable
-                          // Tier 1 — shares > 0, pending: full brightness
+                          // Tier 1 — selectable: full brightness
                           ? 'bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800/50'
                           : BigInt(w.shares) > 0n
-                            // Tier 2 — shares > 0, fulfilled: medium dim
+                            // Tier 2 — shares > 0, not selectable in this mode: medium dim
                             ? 'bg-white opacity-60 dark:bg-neutral-900'
                             // Tier 3 — shares = 0: most faded
                             : 'bg-white opacity-30 dark:bg-neutral-900',
@@ -258,12 +290,21 @@ export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props)
         </div>
       )}
 
-      <FulfillPanel
-        selected={selectedRows}
-        vaultAssetMap={vaultAssetMap}
-        safeInfo={safeInfo}
-        onSuccess={handleFulfillSuccess}
-      />
+      {mode === 'fulfill' && (
+        <FulfillPanel
+          selected={selectedRows}
+          vaultAssetMap={vaultAssetMap}
+          safeInfo={safeInfo}
+          onSuccess={handleFulfillSuccess}
+        />
+      )}
+      {mode === 'cancel' && (
+        <CancelPanel
+          selected={selectedRows}
+          safeInfo={safeInfo}
+          onSuccess={handleFulfillSuccess}
+        />
+      )}
     </div>
   )
 }
