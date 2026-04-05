@@ -10,4 +10,4 @@ export const ASSET_METADATA: Record<string, { symbol: string; decimals: number }
   '0xe37b52201571f92487505d32677a6711d7d096c9': { symbol: 'USDT', decimals: 6 },
 }
 
-export { HA_VAULT_READER_ABI, VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI } from './abis';
+export { HA_VAULT_READER_ABI, VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI, FUND_VAULT_ABI, STRATEGY_ABI } from './abis';

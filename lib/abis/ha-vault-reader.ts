@@ -1032,7 +1032,7 @@ export const HA_VAULT_READER_ABI =
    },
    {
       "inputs":[
-         
+
       ],
       "name":"vaultManager",
       "outputs":[
@@ -1040,6 +1040,125 @@ export const HA_VAULT_READER_ABI =
             "internalType":"address",
             "name":"",
             "type":"address"
+         }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+   },
+   {
+      "inputs":[
+         {
+            "internalType":"address",
+            "name":"strategy",
+            "type":"address"
+         }
+      ],
+      "name":"getStrategyCap",
+      "outputs":[
+         {
+            "internalType":"uint256",
+            "name":"",
+            "type":"uint256"
+         }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+   },
+   {
+      "inputs":[
+         {
+            "internalType":"address",
+            "name":"strategy",
+            "type":"address"
+         }
+      ],
+      "name":"getTotalAllocated",
+      "outputs":[
+         {
+            "internalType":"uint256",
+            "name":"",
+            "type":"uint256"
+         }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+   },
+   {
+      "inputs":[
+         {
+            "internalType":"address",
+            "name":"strategy",
+            "type":"address"
+         }
+      ],
+      "name":"getTotalDeallocated",
+      "outputs":[
+         {
+            "internalType":"uint256",
+            "name":"",
+            "type":"uint256"
+         }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+   },
+   {
+      "inputs":[
+         {
+            "internalType":"address",
+            "name":"asset",
+            "type":"address"
+         }
+      ],
+      "name":"getTotalDeployedAssets",
+      "outputs":[
+         {
+            "internalType":"uint256",
+            "name":"",
+            "type":"uint256"
+         }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+   },
+   {
+      "inputs":[
+         {
+            "internalType":"address",
+            "name":"asset",
+            "type":"address"
+         },
+         {
+            "internalType":"address",
+            "name":"strategy",
+            "type":"address"
+         }
+      ],
+      "name":"isStrategyWhitelisted",
+      "outputs":[
+         {
+            "internalType":"bool",
+            "name":"",
+            "type":"bool"
+         }
+      ],
+      "stateMutability":"view",
+      "type":"function"
+   },
+   {
+      "inputs":[
+         {
+            "internalType":"address",
+            "name":"asset",
+            "type":"address"
+         }
+      ],
+      "name":"getStrategyCount",
+      "outputs":[
+         {
+            "internalType":"uint256",
+            "name":"",
+            "type":"uint256"
          }
       ],
       "stateMutability":"view",

@@ -64,6 +64,12 @@ export default function RootLayout({
               >
                 NAV Management
               </Link>
+              <Link
+                href="/strategies"
+                className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              >
+                Strategies
+              </Link>
               <div className="ml-auto">
                 <ConnectWallet />
               </div>
