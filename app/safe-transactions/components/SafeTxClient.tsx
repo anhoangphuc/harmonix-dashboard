@@ -87,7 +87,7 @@ function useAllRoleTxs(vaultAssetMap: Record<string, string>): {
   }
 
   // Sort by nonce ascending so the queue reads naturally
-  const txs = Array.from(merged.values()).sort((a, b) => a.nonce - b.nonce)
+  const txs = Array.from(merged.values()).sort((a, b) => Number(a.nonce) - Number(b.nonce))
 
   return { txs, isLoading, hasError, refetchAll }
 }
