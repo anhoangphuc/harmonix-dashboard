@@ -7,6 +7,7 @@ import { encodeFunctionData, getAddress } from 'viem'
 import { VAULT_ASSET_ABI } from '@/lib/abis'
 import { ASSET_METADATA } from '@/lib/contracts'
 import { useProposeSafeTransaction } from '@/lib/safe/hooks'
+import { getSafeAddressForRole } from '@/lib/safe/roles'
 import type { SafeInfo } from '@/lib/safe/types'
 import type { Withdrawal } from '@/lib/vault-reader'
 
@@ -31,7 +32,7 @@ function formatUnits(value: string, decimals: number): string {
 export default function FulfillPanel({ selected, vaultAssetMap, safeInfo, onSuccess }: Props) {
   const { address, isConnected, chainId } = useAccount()
 
-  const proposeTx = useProposeSafeTransaction()
+  const proposeTx = useProposeSafeTransaction(getSafeAddressForRole('operator'))
 
   useEffect(() => {
     if (proposeTx.isSuccess) {

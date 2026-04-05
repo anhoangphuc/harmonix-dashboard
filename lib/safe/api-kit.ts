@@ -1,4 +1,5 @@
 import SafeApiKit from '@safe-global/api-kit'
+import { getDefaultSafeAddress } from './roles'
 
 let _apiKit: SafeApiKit | null = null
 
@@ -15,8 +16,7 @@ export function getApiKit(): SafeApiKit {
   return _apiKit
 }
 
+/** @deprecated Use `getSafeAddressForRole(role)` or `getDefaultSafeAddress()` from roles.ts */
 export function getSafeAddress(): `0x${string}` {
-  const addr = process.env.NEXT_PUBLIC_SAFE_ADDRESS
-  if (!addr) return '0x' as `0x${string}` // will show as unconfigured in the UI
-  return addr as `0x${string}`
+  return getDefaultSafeAddress()
 }

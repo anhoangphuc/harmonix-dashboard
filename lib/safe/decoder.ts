@@ -82,6 +82,7 @@ export function summarizeDecodedData(
   decoded: DataDecoded | null,
   to: string,
   value: string,
+  vaultAssetMap?: Record<string, string>,
 ): string {
   if (!decoded) {
     if (value !== '0' && value !== '') {
@@ -96,7 +97,8 @@ export function summarizeDecodedData(
   if (method === 'fulfillRedeem') {
     const totalAmount = parameters.find((p) => p.name === 'totalAmount')
     const controllers = parameters.find((p) => p.name === 'controllers')
-    const assetMeta = ASSET_METADATA[to.toLowerCase()]
+    const tokenAddr = vaultAssetMap?.[to.toLowerCase()]
+    const assetMeta = tokenAddr ? ASSET_METADATA[tokenAddr] : ASSET_METADATA[to.toLowerCase()]
     const formatted = assetMeta && totalAmount
       ? formatAmount(totalAmount.value, assetMeta.decimals) + ' ' + assetMeta.symbol
       : (totalAmount?.value ?? '?')

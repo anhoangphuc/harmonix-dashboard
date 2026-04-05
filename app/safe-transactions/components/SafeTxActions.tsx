@@ -2,12 +2,12 @@
 
 import { useAccount } from 'wagmi'
 import { useConfirmSafeTransaction, useExecuteSafeTransaction, useCancelSafeTransaction } from '@/lib/safe/hooks'
-import { getSafeAddress } from '@/lib/safe/api-kit'
 import type { PendingSafeTx, SafeInfo } from '@/lib/safe/types'
 
 type Props = {
   tx: PendingSafeTx
   safeInfo: SafeInfo | undefined
+  safeAddress: `0x${string}`
 }
 
 function isRejectionTx(tx: PendingSafeTx, safeAddress: string): boolean {
@@ -16,12 +16,11 @@ function isRejectionTx(tx: PendingSafeTx, safeAddress: string): boolean {
   return hasEmptyData && toSelf
 }
 
-export default function SafeTxActions({ tx, safeInfo }: Props) {
+export default function SafeTxActions({ tx, safeInfo, safeAddress }: Props) {
   const { address, isConnected } = useAccount()
-  const confirmTx = useConfirmSafeTransaction()
-  const executeTx = useExecuteSafeTransaction()
-  const cancelTx = useCancelSafeTransaction()
-  const safeAddress = getSafeAddress()
+  const confirmTx = useConfirmSafeTransaction(safeAddress)
+  const executeTx = useExecuteSafeTransaction(safeAddress)
+  const cancelTx = useCancelSafeTransaction(safeAddress)
 
   if (!isConnected || !address) {
     return (

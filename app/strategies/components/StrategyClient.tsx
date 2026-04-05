@@ -6,8 +6,7 @@ import { useAccount } from 'wagmi'
 import { encodeFunctionData, getAddress, parseUnits } from 'viem'
 import { FUND_VAULT_ABI } from '@/lib/abis'
 import { ASSET_METADATA } from '@/lib/contracts'
-import { useProposeSafeTransaction } from '@/lib/safe/hooks'
-import { useSafeInfo } from '@/lib/safe/hooks'
+import { useProposeSafeTransaction, useRoleCheck } from '@/lib/safe/hooks'
 import { formatTokenAmount, truncateAddress } from '@/lib/format'
 import type { StrategyPageData, AssetStrategySummary, StrategyData } from '@/lib/strategy-reader'
 
@@ -29,8 +28,8 @@ const ACTION_LABELS: Record<ActionType, string> = {
 
 export default function StrategyClient({ data }: Props) {
   const { address, isConnected, chainId } = useAccount()
-  const { data: safeInfo } = useSafeInfo()
-  const proposeTx = useProposeSafeTransaction()
+  const { safeAddress, canPropose, isSafeOwner, hasRole } = useRoleCheck('curator')
+  const proposeTx = useProposeSafeTransaction(safeAddress)
 
   const [activeAction, setActiveAction] = useState<ActionType | null>(null)
   const [strategyInput, setStrategyInput] = useState('')
@@ -38,9 +37,6 @@ export default function StrategyClient({ data }: Props) {
   const [selectedAsset, setSelectedAsset] = useState<string>(data.assets[0]?.asset ?? '')
 
   const isWrongChain = isConnected && chainId !== 999
-  const isOwner = Boolean(
-    address && safeInfo?.owners.some((o) => o.toLowerCase() === address.toLowerCase()),
-  )
   const fundVaultAddress = getAddress(data.fundVaultAddress) as `0x${string}`
 
   // Find current asset context for decimals
@@ -114,8 +110,12 @@ export default function StrategyClient({ data }: Props) {
     btnLabel = 'Wrong network'
     btnDisabled = true
     btnClass = 'bg-amber-100 text-amber-600 cursor-not-allowed'
-  } else if (!isOwner) {
+  } else if (!isSafeOwner) {
     btnLabel = 'Not a Safe owner'
+    btnDisabled = true
+    btnClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
+  } else if (!hasRole) {
+    btnLabel = 'Safe lacks CURATOR_ROLE'
     btnDisabled = true
     btnClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
   } else if (proposeTx.isPending) {

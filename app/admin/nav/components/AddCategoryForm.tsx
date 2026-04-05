@@ -7,6 +7,7 @@ import { encodeFunctionData, getAddress } from 'viem'
 import { FUND_NAV_FEED_ABI } from '@/lib/abis'
 import { FUND_NAV_FEED_ADDRESS } from '@/lib/contracts'
 import { useProposeSafeTransaction } from '@/lib/safe/hooks'
+import { getSafeAddressForRole } from '@/lib/safe/roles'
 
 type Props = {
   asset: string
@@ -22,7 +23,7 @@ export default function AddCategoryForm({ asset, canPropose, isConnected, onClos
   const feedAddress = getAddress(FUND_NAV_FEED_ADDRESS) as `0x${string}`
   const assetAddress = getAddress(asset) as `0x${string}`
 
-  const proposeTx = useProposeSafeTransaction()
+  const proposeTx = useProposeSafeTransaction(getSafeAddressForRole('admin'))
 
   const isWrongChain = isConnected && chainId !== 999
   const canSubmit = isConnected && !isWrongChain && canPropose && description.trim().length > 0 && !proposeTx.isPending

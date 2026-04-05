@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ASSET_METADATA } from '@/lib/contracts'
-import { useSafeInfo } from '@/lib/safe/hooks'
+import { useRoleCheck } from '@/lib/safe/hooks'
 import type { SafeInfo } from '@/lib/safe/types'
 import FilterBar, { StatusFilter, AssetOption } from './FilterBar'
 import FulfillPanel from './FulfillPanel'
@@ -45,10 +45,9 @@ function formatTimestamp(ts: number): string {
 export default function WithdrawalsClient({ withdrawals, vaultAssetMap }: Props) {
   const router = useRouter()
 
-  // Fetch Safe info here so it's ready before FulfillPanel mounts
-  const { data: safeData } = useSafeInfo()
-  const safeInfo = safeData as SafeInfo | undefined
-  console.log("SAFE INFO", safeInfo)
+  // Fetch Safe info for the operator role
+  const { safeInfo: operatorSafeInfo, safeAddress: operatorSafeAddress } = useRoleCheck('operator')
+  const safeInfo = operatorSafeInfo as SafeInfo | undefined
   const [status, setStatus] = useState<StatusFilter>('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')

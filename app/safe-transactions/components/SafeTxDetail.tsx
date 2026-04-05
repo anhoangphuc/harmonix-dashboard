@@ -7,6 +7,7 @@ import SafeTxActions from './SafeTxActions'
 type Props = {
   tx: PendingSafeTx
   safeInfo: SafeInfo | undefined
+  safeAddress: `0x${string}`
 }
 
 function truncate(addr: string): string {
@@ -14,7 +15,7 @@ function truncate(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
 }
 
-export default function SafeTxDetail({ tx, safeInfo }: Props) {
+export default function SafeTxDetail({ tx, safeInfo, safeAddress }: Props) {
   return (
     <div className="space-y-4 border-t border-neutral-200 px-4 py-4 dark:border-neutral-700">
       {/* Decoded calldata */}
@@ -82,7 +83,7 @@ export default function SafeTxDetail({ tx, safeInfo }: Props) {
       </div>
 
       {/* Actions */}
-      <SafeTxActions tx={tx} safeInfo={safeInfo} />
+      <SafeTxActions tx={tx} safeInfo={safeInfo} safeAddress={safeAddress} />
     </div>
   )
 }

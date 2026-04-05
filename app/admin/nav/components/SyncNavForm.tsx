@@ -7,6 +7,7 @@ import { encodeFunctionData, getAddress, parseUnits } from 'viem'
 import { FUND_NAV_FEED_ABI } from '@/lib/abis'
 import { FUND_NAV_FEED_ADDRESS } from '@/lib/contracts'
 import { useProposeSafeTransaction } from '@/lib/safe/hooks'
+import { getSafeAddressForRole } from '@/lib/safe/roles'
 import { formatTokenAmount } from '@/lib/format'
 import type { NavCategoryData } from '@/lib/nav-reader'
 
@@ -27,7 +28,7 @@ export default function SyncNavForm({ asset, decimals, symbol, category, canProp
   const feedAddress = getAddress(FUND_NAV_FEED_ADDRESS) as `0x${string}`
   const assetAddress = getAddress(asset) as `0x${string}`
 
-  const proposeTx = useProposeSafeTransaction()
+  const proposeTx = useProposeSafeTransaction(getSafeAddressForRole('price_updater'))
 
   const isWrongChain = isConnected && chainId !== 999
 

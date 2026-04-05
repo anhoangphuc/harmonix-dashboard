@@ -6,6 +6,7 @@ import { useAccount } from 'wagmi'
 import { encodeFunctionData, getAddress } from 'viem'
 import { VAULT_ASSET_ABI } from '@/lib/abis'
 import { useProposeSafeTransaction } from '@/lib/safe/hooks'
+import { getSafeAddressForRole } from '@/lib/safe/roles'
 import type { SafeInfo } from '@/lib/safe/types'
 import type { Withdrawal } from '@/lib/vault-reader'
 
@@ -18,7 +19,7 @@ type Props = {
 export default function CancelPanel({ selected, safeInfo, onSuccess }: Props) {
   const { address, isConnected, chainId } = useAccount()
 
-  const cancelTx = useProposeSafeTransaction()
+  const cancelTx = useProposeSafeTransaction(getSafeAddressForRole('operator'))
 
   useEffect(() => {
     if (cancelTx.isSuccess) {
