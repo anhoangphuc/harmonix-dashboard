@@ -30,6 +30,7 @@ function inferRoleFromMethod(method: string | undefined): RoleType | null {
     case 'addNavCategory':
     case 'removeNavCategory':
     case 'setCategoryStatus':
+    case 'setTimelockDuration':
       return 'admin'
     default:
       return null

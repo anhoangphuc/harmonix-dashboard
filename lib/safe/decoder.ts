@@ -1,6 +1,7 @@
 import { decodeFunctionData } from 'viem'
-import { VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI, FUND_VAULT_ABI } from '@/lib/abis'
+import { VAULT_ASSET_ABI, FUND_NAV_FEED_ABI, VAULT_MANAGER_ABI, FUND_VAULT_ABI, HA_BASE_ABI, VAULT_MANAGER_ADMIN_ABI } from '@/lib/abis'
 import { ASSET_METADATA } from '@/lib/contracts'
+import { TIMELOCKED_FUNCTIONS } from '@/lib/timelocks-reader'
 import { getApiKit } from './api-kit'
 import type { DataDecoded, DecodedParam } from './types'
 
@@ -37,6 +38,8 @@ export async function decodeTransactionData(
     FUND_NAV_FEED_ABI,
     VAULT_MANAGER_ABI,
     FUND_VAULT_ABI,
+    HA_BASE_ABI,
+    VAULT_MANAGER_ADMIN_ABI,
     ERC20_ABI,
   ] as const
 
@@ -195,6 +198,17 @@ export function summarizeDecodedData(
     return `Deallocate ${amount} from strategy ${truncate(strategy)}`
   }
 
+  // ── Timelock admin methods ──────────────────────────────────────────────
+  if (method === 'setTimelockDuration') {
+    const selector = parameters.find((p) => p.name === 'selector')?.value ?? '0x'
+    const duration = parameters.find((p) => p.name === 'duration')?.value ?? '0'
+    const fnDef = TIMELOCKED_FUNCTIONS.find(
+      (f) => f.selector.toLowerCase() === selector.toLowerCase()
+    )
+    const fnLabel = fnDef?.name ?? selector
+    return `Set timelock for ${fnLabel} → ${formatDuration(Number(duration))}`
+  }
+
   // Generic fallback
   return `${method}(${parameters.map((p) => p.name).join(', ')})`
 }
@@ -206,6 +220,20 @@ export function summarizeDecodedData(
 function truncate(addr: string): string {
   if (!addr || addr.length < 10) return addr
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds === 0) return '0s'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  const parts: string[] = []
+  if (d) parts.push(`${d}d`)
+  if (h) parts.push(`${h}h`)
+  if (m) parts.push(`${m}m`)
+  if (s || parts.length === 0) parts.push(`${s}s`)
+  return parts.join(' ')
 }
 
 function formatAmount(raw: string, decimals: number): string {

@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useRoleCheck } from '@/lib/safe/hooks'
 import { truncateAddress } from '@/lib/format'
+import { getTimelockPageData } from '@/lib/timelocks-reader'
 import DurationsTab from './DurationsTab'
 import SubmitTab from './SubmitTab'
 import RevokeTab from './RevokeTab'
-import type { TimelockPageData } from '@/lib/timelocks-reader'
 
 type Tab = 'durations' | 'submit' | 'revoke'
 
@@ -16,11 +17,42 @@ const TAB_LABELS: Record<Tab, string> = {
   revoke: 'Revoke Operation',
 }
 
-type Props = { data: TimelockPageData }
-
-export default function TimelockClient({ data }: Props) {
+export default function TimelockClient() {
   const [activeTab, setActiveTab] = useState<Tab>('durations')
   const { safeAddress, hasRole, isSafeOwner } = useRoleCheck('admin')
+
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useQuery({
+    queryKey: ['timelocks', 'pageData'],
+    queryFn: getTimelockPageData,
+    refetchInterval: 300_000,
+    staleTime: 60_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-16 animate-pulse rounded-lg bg-neutral-100 dark:bg-neutral-800" />
+        ))}
+      </div>
+    )
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+          Failed to load timelock data: {error instanceof Error ? error.message : 'Unknown error'}
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -41,7 +73,7 @@ export default function TimelockClient({ data }: Props) {
             <span className="text-neutral-500 dark:text-neutral-400">VaultManagerAdmin: </span>
             <span className="font-mono text-neutral-900 dark:text-white">{truncateAddress(data.vaultManagerAdminAddress)}</span>
           </div>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                 hasRole
@@ -60,8 +92,20 @@ export default function TimelockClient({ data }: Props) {
             >
               {isSafeOwner ? 'Safe owner' : 'Not owner'}
             </span>
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              {isFetching ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
         </div>
+        {dataUpdatedAt > 0 && (
+          <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+            Last updated: {new Date(dataUpdatedAt).toLocaleTimeString()} (auto-refresh every 5m)
+          </p>
+        )}
       </div>
 
       {/* Tabs */}
