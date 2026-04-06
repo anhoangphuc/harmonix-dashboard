@@ -1163,5 +1163,95 @@ export const HA_VAULT_READER_ABI =
       ],
       "stateMutability":"view",
       "type":"function"
+   },
+   // ── Timelock reader functions ───────────────────────────────────────────────
+   {
+      "inputs": [
+         { "internalType": "address", "name": "target", "type": "address" },
+         { "internalType": "bytes4", "name": "selector", "type": "bytes4" }
+      ],
+      "name": "getTimelockDuration",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getFundVaultPending",
+      "outputs": [
+         {
+            "components": [
+               { "internalType": "bytes", "name": "data", "type": "bytes" },
+               { "internalType": "bytes4", "name": "selector", "type": "bytes4" },
+               { "internalType": "uint256", "name": "executableAt", "type": "uint256" },
+               { "internalType": "bool", "name": "isReady", "type": "bool" }
+            ],
+            "internalType": "struct HaVaultReader.PendingOperation[]",
+            "name": "",
+            "type": "tuple[]"
+         }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getVaultManagerAdminPending",
+      "outputs": [
+         {
+            "components": [
+               { "internalType": "bytes", "name": "data", "type": "bytes" },
+               { "internalType": "bytes4", "name": "selector", "type": "bytes4" },
+               { "internalType": "uint256", "name": "executableAt", "type": "uint256" },
+               { "internalType": "bool", "name": "isReady", "type": "bool" }
+            ],
+            "internalType": "struct HaVaultReader.PendingOperation[]",
+            "name": "",
+            "type": "tuple[]"
+         }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [{ "internalType": "address", "name": "target", "type": "address" }],
+      "name": "getContractPending",
+      "outputs": [
+         {
+            "components": [
+               { "internalType": "bytes", "name": "data", "type": "bytes" },
+               { "internalType": "bytes4", "name": "selector", "type": "bytes4" },
+               { "internalType": "uint256", "name": "executableAt", "type": "uint256" },
+               { "internalType": "bool", "name": "isReady", "type": "bool" }
+            ],
+            "internalType": "struct HaVaultReader.PendingOperation[]",
+            "name": "",
+            "type": "tuple[]"
+         }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [
+         { "internalType": "address", "name": "target", "type": "address" },
+         { "internalType": "bytes", "name": "data", "type": "bytes" }
+      ],
+      "name": "getTimelockStatus",
+      "outputs": [
+         {
+            "components": [
+               { "internalType": "uint256", "name": "duration", "type": "uint256" },
+               { "internalType": "uint256", "name": "executableAt", "type": "uint256" },
+               { "internalType": "bool", "name": "isReady", "type": "bool" },
+               { "internalType": "bool", "name": "isPending", "type": "bool" }
+            ],
+            "internalType": "struct HaVaultReader.TimelockStatus",
+            "name": "status",
+            "type": "tuple"
+         }
+      ],
+      "stateMutability": "view",
+      "type": "function"
    }
 ] as const;

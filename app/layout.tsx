@@ -70,6 +70,12 @@ export default function RootLayout({
               >
                 Strategies
               </Link>
+              <Link
+                href="/timelocks"
+                className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              >
+                Timelocks
+              </Link>
               <div className="ml-auto">
                 <ConnectWallet />
               </div>
