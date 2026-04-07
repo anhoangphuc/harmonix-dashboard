@@ -2,6 +2,7 @@
 
 import type { DataDecoded, DecodedParam } from '@/lib/safe/types'
 import { ASSET_METADATA } from '@/lib/contracts'
+import { decodeSubmitInnerData } from '@/lib/safe/decoder'
 
 type Props = {
   decoded: DataDecoded | null
@@ -21,6 +22,11 @@ export default function DecodedCalldata({ decoded, rawData, to }: Props) {
     )
   }
 
+  const isSubmitOrRevoke = decoded.method === 'submit' || decoded.method === 'revoke'
+  const innerDecoded = isSubmitOrRevoke
+    ? decodeSubmitInnerData(decoded.parameters.find((p) => p.name === 'data')?.value ?? '')
+    : null
+
   return (
     <div className="rounded-md bg-neutral-100 p-3 dark:bg-neutral-800">
       {/* Function name */}
@@ -31,17 +37,47 @@ export default function DecodedCalldata({ decoded, rawData, to }: Props) {
 
       {/* Parameters */}
       <div className="space-y-1.5">
-        {decoded.parameters.map((param, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs">
-            <span className="w-32 shrink-0 text-neutral-500 dark:text-neutral-400">
-              {param.name}
-              <span className="ml-1 text-neutral-400 dark:text-neutral-500">({param.type})</span>
-            </span>
-            <span className="break-all font-mono text-neutral-700 dark:text-neutral-300">
-              {formatParamValue(param.value, param.type, to, decoded.parameters)}
-            </span>
-          </div>
-        ))}
+        {decoded.parameters.map((param, i) => {
+          if (isSubmitOrRevoke && param.name === 'data' && innerDecoded) {
+            return (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span className="w-32 shrink-0 text-neutral-500 dark:text-neutral-400">
+                  {param.name}
+                  <span className="ml-1 text-neutral-400 dark:text-neutral-500">({param.type})</span>
+                </span>
+                <div className="min-w-0 flex-1 rounded border border-neutral-300 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-900">
+                  <p className="mb-1 text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                    {innerDecoded.method}
+                    <span className="ml-1 text-neutral-400">()</span>
+                  </p>
+                  {innerDecoded.parameters.map((inner, j) => (
+                    <div key={j} className="flex items-start gap-2 text-xs">
+                      <span className="w-28 shrink-0 text-neutral-500 dark:text-neutral-400">
+                        {inner.name}
+                        <span className="ml-1 text-neutral-400 dark:text-neutral-500">({inner.type})</span>
+                      </span>
+                      <span className="break-all font-mono text-neutral-700 dark:text-neutral-300">
+                        {formatParamValue(inner.value, inner.type, to, innerDecoded.parameters)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          }
+
+          return (
+            <div key={i} className="flex items-start gap-2 text-xs">
+              <span className="w-32 shrink-0 text-neutral-500 dark:text-neutral-400">
+                {param.name}
+                <span className="ml-1 text-neutral-400 dark:text-neutral-500">({param.type})</span>
+              </span>
+              <span className="break-all font-mono text-neutral-700 dark:text-neutral-300">
+                {formatParamValue(param.value, param.type, to, decoded.parameters)}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

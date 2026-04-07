@@ -198,6 +198,18 @@ export function summarizeDecodedData(
     return `Deallocate ${amount} from strategy ${truncate(strategy)}`
   }
 
+  // ── Timelock submit / revoke ────────────────────────────────────────────
+  if (method === 'submit' || method === 'revoke') {
+    const dataParam = parameters.find((p) => p.name === 'data')?.value ?? ''
+    const inner = decodeSubmitInnerData(dataParam)
+    const label = method === 'submit' ? 'Submit timelock' : 'Revoke timelock'
+    if (inner) {
+      const argSummary = inner.parameters.map((p) => truncate(p.value)).join(', ')
+      return `${label}: ${inner.method}(${argSummary})`
+    }
+    return `${label}: ${truncate(dataParam)}`
+  }
+
   // ── Timelock admin methods ──────────────────────────────────────────────
   if (method === 'setTimelockDuration') {
     const selector = parameters.find((p) => p.name === 'selector')?.value ?? '0x'
@@ -211,6 +223,53 @@ export function summarizeDecodedData(
 
   // Generic fallback
   return `${method}(${parameters.map((p) => p.name).join(', ')})`
+}
+
+// ---------------------------------------------------------------------------
+// Submit inner-data decoder
+// ---------------------------------------------------------------------------
+
+/**
+ * Decodes the `data` bytes argument passed to `submit(bytes)` or `revoke(bytes)`.
+ * These bytes are raw calldata for one of the known timelocked functions.
+ */
+export function decodeSubmitInnerData(bytesHex: string): DataDecoded | null {
+  if (!bytesHex || bytesHex.length < 10) return null
+
+  const selector = bytesHex.slice(0, 10).toLowerCase()
+  const fnDef = TIMELOCKED_FUNCTIONS.find(
+    (f) => f.selector.toLowerCase() === selector,
+  )
+  if (!fnDef) return null
+
+  try {
+    const { functionName, args } = decodeFunctionData({
+      abi: fnDef.abi as never,
+      data: bytesHex as `0x${string}`,
+    })
+
+    const funcEntry = (
+      fnDef.abi as readonly {
+        type: string
+        name?: string
+        inputs?: readonly { name: string; type: string }[]
+      }[]
+    ).find((item) => item.type === 'function' && item.name === functionName)
+
+    const parameters: DecodedParam[] = args
+      ? (args as unknown[]).map((value, i) => ({
+          name: funcEntry?.inputs?.[i]?.name ?? `param${i}`,
+          type: funcEntry?.inputs?.[i]?.type ?? 'unknown',
+          value: Array.isArray(value)
+            ? JSON.stringify(value.map(String))
+            : String(value),
+        }))
+      : []
+
+    return { method: functionName, parameters }
+  } catch {
+    return null
+  }
 }
 
 // ---------------------------------------------------------------------------
