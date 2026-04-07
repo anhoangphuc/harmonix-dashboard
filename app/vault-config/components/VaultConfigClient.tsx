@@ -1,54 +1,34 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
-import { encodeFunctionData, getAddress } from 'viem'
+import { decodeFunctionData, encodeFunctionData, getAddress, parseUnits } from 'viem'
 import { HA_BASE_ABI, VAULT_MANAGER_ADMIN_ABI } from '@/lib/abis'
 import { useProposeSafeTransaction, useRoleCheck } from '@/lib/safe/hooks'
 import { TIMELOCKED_FUNCTIONS } from '@/lib/timelocks-reader'
 import type { PendingOperation } from '@/lib/timelocks-reader'
 import { getVaultConfigData } from '@/lib/vault-config-reader'
 import type { VaultConfigData } from '@/lib/vault-config-reader'
+import { useCountdown } from '@/lib/hooks/use-countdown'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Row definition ────────────────────────────────────────────────────────────
 
-type SetterFnName = 'setAccessManager' | 'setShareToken' | 'setFundVault' | 'setFeeReceiver'
+type ArgType = 'address' | 'wad_pct' | 'seconds'
 
-type SetterDef = {
-  fnName: SetterFnName
+type RowDef = {
   label: string
-  currentValue: (data: VaultConfigData) => string | null
-  argLabel: string
+  display: (d: VaultConfigData) => string
+  isAddress?: boolean
+  setter?: {
+    fnName: string
+    argType: ArgType
+    timelocked: boolean
+    placeholder: string
+    hint?: string
+  }
 }
-
-const SETTERS: SetterDef[] = [
-  {
-    fnName: 'setAccessManager',
-    label: 'Access Manager',
-    currentValue: (d) => d.accessManager,
-    argLabel: 'New access manager address',
-  },
-  {
-    fnName: 'setShareToken',
-    label: 'Share Token',
-    currentValue: (d) => d.shareToken,
-    argLabel: 'New share token address',
-  },
-  {
-    fnName: 'setFundVault',
-    label: 'Fund Vault',
-    currentValue: (d) => d.fundVaultAddress,
-    argLabel: 'New fund vault address',
-  },
-  {
-    fnName: 'setFeeReceiver',
-    label: 'Fee Receiver',
-    currentValue: (d) => d.feeConfig.feeReceiver,
-    argLabel: 'New fee receiver address',
-  },
-]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -71,126 +51,130 @@ function formatDuration(seconds: number): string {
   return parts.join(' ')
 }
 
-function formatCountdown(executableAt: string): string {
-  const diff = Number(executableAt) * 1000 - Date.now()
-  if (diff <= 0) return 'Ready to execute'
-  const totalSecs = Math.ceil(diff / 1000)
-  const d = Math.floor(totalSecs / 86400)
-  const h = Math.floor((totalSecs % 86400) / 3600)
-  const m = Math.floor((totalSecs % 3600) / 60)
-  const s = totalSecs % 60
-  const parts: string[] = []
-  if (d) parts.push(`${d}d`)
-  if (h) parts.push(`${h}h`)
-  if (m) parts.push(`${m}m`)
-  if (s || parts.length === 0) parts.push(`${s}s`)
-  return `Executable in ${parts.join(' ')}`
-}
-
-/** Formats a WAD-scaled rate (1e18 = 100%) as a percentage string. */
 function formatWadRate(raw: string): string {
   if (!raw || raw === '0') return '0%'
   try {
     const pct = (Number(BigInt(raw)) / 1e18) * 100
     return `${pct.toFixed(2).replace(/\.00$/, '')}%`
-  } catch {
-    return raw
-  }
+  } catch { return raw }
 }
 
-/** Formats a unix timestamp as a locale date string, or "Never" if 0. */
 function formatTimestamp(raw: string): string {
   if (!raw || raw === '0') return 'Never'
+  try { return new Date(Number(raw) * 1000).toLocaleString() } catch { return raw }
+}
+
+function formatCountdown(executableAt: string): string {
+  const diff = Number(executableAt) * 1000 - Date.now()
+  if (diff <= 0) return 'Ready to execute'
+  const s = Math.ceil(diff / 1000)
+  return `Executable in ${formatDuration(s)}`
+}
+
+/** Convert user-entered percentage string (e.g. "1.5") → WAD bigint */
+function pctToWad(pct: string): bigint {
+  return parseUnits(pct, 16) // 1% = 1e16, so decimals=16 maps "1" → 1e16
+}
+
+/** Encode the setter calldata — wraps in submit() if timelocked */
+function encodeCalldata(
+  fnName: string,
+  argType: ArgType,
+  inputValue: string,
+  timelocked: boolean,
+): `0x${string}` | null {
   try {
-    return new Date(Number(raw) * 1000).toLocaleString()
+    let innerData: `0x${string}`
+    if (argType === 'address') {
+      const addr = getAddress(inputValue)
+      innerData = encodeFunctionData({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        abi: VAULT_MANAGER_ADMIN_ABI as any,
+        functionName: fnName,
+        args: [addr],
+      })
+    } else if (argType === 'wad_pct') {
+      const wad = pctToWad(inputValue)
+      innerData = encodeFunctionData({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        abi: VAULT_MANAGER_ADMIN_ABI as any,
+        functionName: fnName,
+        args: [wad],
+      })
+    } else {
+      // seconds
+      const secs = BigInt(Math.round(Number(inputValue)))
+      innerData = encodeFunctionData({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        abi: VAULT_MANAGER_ADMIN_ABI as any,
+        functionName: fnName,
+        args: [secs],
+      })
+    }
+
+    if (timelocked) {
+      return encodeFunctionData({
+        abi: HA_BASE_ABI,
+        functionName: 'submit',
+        args: [innerData],
+      })
+    }
+    return innerData
   } catch {
-    return raw
+    return null
   }
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Inline edit row ───────────────────────────────────────────────────────────
 
-function AddressRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-2.5 text-sm">
-      <span className="text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span className="font-mono text-neutral-900 dark:text-neutral-100" title={value}>
-        {value ? truncate(value) : '—'}
-      </span>
-    </div>
-  )
-}
-
-function ValueRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-2.5 text-sm">
-      <span className="text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span className="text-neutral-900 dark:text-neutral-100">{value || '—'}</span>
-    </div>
-  )
-}
-
-// ── Setter card ───────────────────────────────────────────────────────────────
-
-type SetterCardProps = {
-  def: SetterDef
+type EditRowProps = {
+  def: RowDef
   data: VaultConfigData
   safeAddress?: `0x${string}`
   isSafeOwner: boolean
   hasRole: boolean
 }
 
-function SetterCard({ def, data, safeAddress, isSafeOwner, hasRole }: SetterCardProps) {
+function EditRow({ def, data, safeAddress, isSafeOwner, hasRole }: EditRowProps) {
   const { isConnected, chainId } = useAccount()
   const proposeTx = useProposeSafeTransaction(safeAddress)
-  const [addressArg, setAddressArg] = useState('')
+  const [open, setOpen] = useState(false)
+  const [inputValue, setInputValue] = useState('')
 
+  const { setter } = def
   const isWrongChain = isConnected && chainId !== 999
-  const fnTimelockDef = TIMELOCKED_FUNCTIONS.find((f) => f.name === def.fnName)
-  const durationSeconds = Number(data.timelockDurations[def.fnName] ?? '0')
 
-  const pendingOp: PendingOperation | undefined = data.pendingOps.find(
-    (op) => op.fnName === def.fnName,
-  )
+  const timelockFnDef = setter?.timelocked
+    ? TIMELOCKED_FUNCTIONS.find((f) => f.name === setter.fnName)
+    : null
+  const durationSeconds = timelockFnDef
+    ? Number(data.timelockDurations[setter!.fnName] ?? '0')
+    : 0
 
-  const currentValue = def.currentValue(data)
+  const pendingOp = setter?.timelocked
+    ? data.pendingOps.find((op) => op.fnName === setter.fnName)
+    : undefined
 
-  let encodedInner: `0x${string}` | null = null
-  try {
-    if (addressArg) {
-      const addr = getAddress(addressArg)
-      encodedInner = encodeFunctionData({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        abi: VAULT_MANAGER_ADMIN_ABI as any,
-        functionName: def.fnName,
-        args: [addr],
-      })
-    }
-  } catch {
-    encodedInner = null
-  }
+  const calldata = setter && inputValue.trim()
+    ? encodeCalldata(setter.fnName, setter.argType, inputValue.trim(), setter.timelocked)
+    : null
 
   function handlePropose() {
-    if (!encodedInner || !data.vaultManagerAdminAddress) return
+    if (!calldata) return
     proposeTx.reset()
-    const calldata = encodeFunctionData({
-      abi: HA_BASE_ABI,
-      functionName: 'submit',
-      args: [encodedInner],
-    })
-    proposeTx.mutate({
-      to: getAddress(data.vaultManagerAdminAddress),
-      data: calldata,
-    })
+    proposeTx.mutate({ to: getAddress(data.vaultManagerAdminAddress), data: calldata })
   }
 
-  const canPropose = Boolean(encodedInner && fnTimelockDef)
+  function handleCancel() {
+    setOpen(false)
+    setInputValue('')
+    proposeTx.reset()
+  }
 
-  // button state machine
-  let btnLabel: string
+  // button label/style
+  let btnLabel = 'Propose via Safe'
   let btnDisabled = false
   let btnClass = 'bg-blue-600 text-white hover:bg-blue-700'
-
   if (!isConnected) {
     btnLabel = 'Connect wallet'; btnDisabled = true
     btnClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
@@ -201,7 +185,7 @@ function SetterCard({ def, data, safeAddress, isSafeOwner, hasRole }: SetterCard
     btnLabel = 'Not a Safe owner'; btnDisabled = true
     btnClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
   } else if (!hasRole) {
-    btnLabel = 'Safe lacks DEFAULT_ADMIN_ROLE'; btnDisabled = true
+    btnLabel = 'No DEFAULT_ADMIN_ROLE'; btnDisabled = true
     btnClass = 'bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500'
   } else if (proposeTx.isPending) {
     btnLabel = 'Confirm in wallet...'; btnDisabled = true
@@ -211,133 +195,336 @@ function SetterCard({ def, data, safeAddress, isSafeOwner, hasRole }: SetterCard
   } else if (proposeTx.isError) {
     btnLabel = 'Failed — Retry'
     btnClass = 'bg-red-600 text-white hover:bg-red-700'
-  } else {
-    btnLabel = 'Propose via Safe'
   }
 
+  const displayVal = def.display(data)
+
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-700 dark:bg-neutral-900">
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
-          {def.label}
-        </h3>
-        <div className="flex items-center gap-2">
-          {durationSeconds > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-              Timelocked · {formatDuration(durationSeconds)}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-              No delay set
+    <div className="py-2.5">
+      {/* Main row */}
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="text-sm text-neutral-500 dark:text-neutral-400">{def.label}</span>
+          {setter?.timelocked && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              Timelocked{durationSeconds > 0 ? ` · ${formatDuration(durationSeconds)}` : ''}
             </span>
           )}
         </div>
-      </div>
-
-      {/* Current value */}
-      <div className="mb-4 text-xs">
-        <span className="text-neutral-500 dark:text-neutral-400">Current: </span>
-        {currentValue ? (
-          <span className="font-mono text-neutral-700 dark:text-neutral-300" title={currentValue}>
-            {truncate(currentValue)}
-          </span>
-        ) : (
-          <span className="italic text-neutral-400 dark:text-neutral-500">no on-chain getter</span>
+        <span
+          className={`shrink-0 text-sm ${def.isAddress ? 'font-mono' : ''} text-neutral-900 dark:text-neutral-100`}
+          title={displayVal}
+        >
+          {displayVal || '—'}
+        </span>
+        {setter && !open && (
+          <button
+            onClick={() => setOpen(true)}
+            className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
+          >
+            Edit
+          </button>
         )}
       </div>
 
-      {/* Pending operation */}
-      {pendingOp && (
-        <div className={`mb-4 rounded-md px-3 py-2 text-xs ${
-          pendingOp.isReady
-            ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-            : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
-        }`}>
-          <span className="font-medium">Pending operation: </span>
-          {pendingOp.isReady ? 'Ready to execute' : formatCountdown(pendingOp.executableAt)}
-        </div>
-      )}
+      {/* Expanded edit panel */}
+      {setter && open && (
+        <div className="mt-2 rounded-md border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800">
+          {/* Pending op banner */}
+          {pendingOp && (
+            <div className={`mb-3 rounded px-2.5 py-1.5 text-xs ${
+              pendingOp.isReady
+                ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
+            }`}>
+              Pending: {pendingOp.isReady ? 'Ready to execute' : formatCountdown(pendingOp.executableAt)}
+            </div>
+          )}
 
-      {/* Input */}
-      <div className="mb-4">
-        <label className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300">
-          {def.argLabel}
-        </label>
-        <input
-          type="text"
-          placeholder="0x..."
-          value={addressArg}
-          onChange={(e) => { setAddressArg(e.target.value); proposeTx.reset() }}
-          className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-mono dark:border-neutral-600 dark:bg-neutral-800 dark:text-white"
-        />
-      </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder={setter.placeholder}
+              value={inputValue}
+              onChange={(e) => { setInputValue(e.target.value); proposeTx.reset() }}
+              className="min-w-0 flex-1 rounded border border-neutral-300 bg-white px-2.5 py-1.5 text-sm font-mono dark:border-neutral-600 dark:bg-neutral-900 dark:text-white"
+            />
+            <button
+              onClick={handlePropose}
+              disabled={btnDisabled || !calldata}
+              className={`shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                !calldata
+                  ? 'cursor-not-allowed bg-neutral-200 text-neutral-400 dark:bg-neutral-700 dark:text-neutral-500'
+                  : btnClass
+              }`}
+            >
+              {btnLabel}
+            </button>
+            <button
+              onClick={handleCancel}
+              className="shrink-0 rounded px-2.5 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
+            >
+              Cancel
+            </button>
+          </div>
 
-      {/* Preview */}
-      {encodedInner && (
-        <div className="mb-4 rounded-md bg-neutral-50 p-3 dark:bg-neutral-800">
-          <p className="mb-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">Preview</p>
-          <p className="text-xs text-neutral-700 dark:text-neutral-300">
-            <span className="font-medium">submit(</span>
-            <span className="font-mono">{def.fnName}({truncate(addressArg)})</span>
-            <span className="font-medium">)</span>
-            {' → '}
-            <span className="font-mono text-neutral-500">{truncate(data.vaultManagerAdminAddress)}</span>
-          </p>
-          {durationSeconds > 0 && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              Executable after {formatDuration(durationSeconds)} delay
+          {setter.hint && (
+            <p className="mt-1.5 text-xs text-neutral-400 dark:text-neutral-500">{setter.hint}</p>
+          )}
+
+          {setter.timelocked && durationSeconds > 0 && (
+            <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+              Will queue via <code className="font-mono">submit()</code> — executable after {formatDuration(durationSeconds)} delay
+            </p>
+          )}
+
+          {proposeTx.isSuccess && (
+            <p className="mt-1.5 text-xs">
+              <Link href="/safe-transactions" className="text-blue-600 hover:underline dark:text-blue-400">
+                View in Safe Transactions →
+              </Link>
+            </p>
+          )}
+
+          {proposeTx.error && (
+            <p className="mt-1.5 truncate text-xs text-red-600 dark:text-red-400" title={proposeTx.error.message}>
+              {proposeTx.error.message}
             </p>
           )}
         </div>
       )}
+    </div>
+  )
+}
 
-      {/* Action row */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handlePropose}
-          disabled={btnDisabled || !canPropose}
-          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-            !canPropose
-              ? 'cursor-not-allowed bg-neutral-200 text-neutral-400 dark:bg-neutral-700 dark:text-neutral-500'
-              : btnClass
-          }`}
-        >
-          {btnLabel}
-        </button>
+// ── Section ───────────────────────────────────────────────────────────────────
 
-        {proposeTx.isPending && (
-          <svg className="h-4 w-4 animate-spin text-neutral-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-          </svg>
-        )}
+function Section({
+  title,
+  rows,
+  data,
+  safeAddress,
+  isSafeOwner,
+  hasRole,
+}: {
+  title: string
+  rows: RowDef[]
+  data: VaultConfigData
+  safeAddress?: `0x${string}`
+  isSafeOwner: boolean
+  hasRole: boolean
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 text-base font-semibold text-neutral-900 dark:text-white">{title}</h2>
+      <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-5 dark:divide-neutral-800 dark:border-neutral-700 dark:bg-neutral-900">
+        {rows.map((row) => (
+          <EditRow
+            key={row.label}
+            def={row}
+            data={data}
+            safeAddress={safeAddress}
+            isSafeOwner={isSafeOwner}
+            hasRole={hasRole}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
 
-        {proposeTx.isSuccess && (
-          <Link href="/safe-transactions" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-            View pending transactions
-          </Link>
-        )}
+// ── Pending op card ───────────────────────────────────────────────────────────
 
-        {proposeTx.error && (
-          <span
-            className="max-w-xs cursor-help truncate text-xs text-red-600 dark:text-red-400"
-            title={proposeTx.error.message}
-          >
-            {proposeTx.error.message}
-          </span>
-        )}
+function decodeAdminOpCalldata(data: `0x${string}`): { fnName: string; args: string } {
+  try {
+    const { functionName, args } = decodeFunctionData({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      abi: VAULT_MANAGER_ADMIN_ABI as any,
+      data,
+    })
+    const argsStr = args ? (args as readonly unknown[]).map((a) => String(a)).join(', ') : ''
+    return { fnName: functionName, args: argsStr }
+  } catch {
+    const sel = data.slice(0, 10).toLowerCase()
+    const fn = TIMELOCKED_FUNCTIONS.find((f) => f.selector.toLowerCase() === sel)
+    return { fnName: fn?.name ?? 'unknown', args: data.slice(10, 50) + '…' }
+  }
+}
+
+function PendingOpCard({
+  op,
+  adminAddress,
+  safeAddress,
+  isSafeOwner,
+  hasRole,
+  isConnected,
+  isWrongChain,
+}: {
+  op: PendingOperation
+  adminAddress: `0x${string}`
+  safeAddress: `0x${string}` | undefined
+  isSafeOwner: boolean
+  hasRole: boolean
+  isConnected: boolean
+  isWrongChain: boolean
+}) {
+  const proposeTx = useProposeSafeTransaction(safeAddress)
+  const countdown = useCountdown(Number(op.executableAt))
+  const decoded = useMemo(() => decodeAdminOpCalldata(op.data as `0x${string}`), [op.data])
+
+  function handleExecute() {
+    proposeTx.reset()
+    proposeTx.mutate({ to: adminAddress, data: op.data as `0x${string}` })
+  }
+
+  const base = 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors'
+  const disabledStyle = `${base} bg-neutral-200 text-neutral-400 cursor-not-allowed dark:bg-neutral-700 dark:text-neutral-500`
+
+  let btnLabel: string
+  let btnDisabled = false
+  let btnClass = `${base} bg-green-600 text-white hover:bg-green-700`
+
+  if (!op.isReady) {
+    btnLabel = countdown ?? 'Waiting…'; btnDisabled = true; btnClass = disabledStyle
+  } else if (!isConnected) {
+    btnLabel = 'Connect wallet'; btnDisabled = true; btnClass = disabledStyle
+  } else if (isWrongChain) {
+    btnLabel = 'Wrong network'; btnDisabled = true; btnClass = `${base} bg-amber-100 text-amber-600 cursor-not-allowed`
+  } else if (!isSafeOwner) {
+    btnLabel = 'Not owner'; btnDisabled = true; btnClass = disabledStyle
+  } else if (!hasRole) {
+    btnLabel = 'No role'; btnDisabled = true; btnClass = disabledStyle
+  } else if (proposeTx.isPending) {
+    btnLabel = 'Confirm…'; btnDisabled = true
+  } else if (proposeTx.isSuccess) {
+    btnLabel = 'Proposed'; btnDisabled = true; btnClass = `${base} bg-green-600 text-white cursor-not-allowed`
+  } else if (proposeTx.isError) {
+    btnLabel = 'Retry'; btnClass = `${base} bg-red-600 text-white hover:bg-red-700`
+  } else {
+    btnLabel = 'Execute via Safe'
+  }
+
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-white">
+              {decoded.fnName}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+              op.isReady
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+            }`}>
+              {op.isReady ? 'Ready' : (countdown ?? 'Waiting')}
+            </span>
+          </div>
+          <p className="truncate font-mono text-xs text-neutral-400" title={decoded.args}>
+            {decoded.args}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {proposeTx.isSuccess && (
+            <Link href="/safe-transactions" className="text-xs text-blue-600 hover:underline dark:text-blue-400">
+              View
+            </Link>
+          )}
+          {proposeTx.error && (
+            <span className="max-w-[200px] cursor-help truncate text-xs text-red-600 dark:text-red-400" title={proposeTx.error.message}>
+              {proposeTx.error.message}
+            </span>
+          )}
+          <button onClick={handleExecute} disabled={btnDisabled} className={btnClass}>
+            {btnLabel}
+          </button>
+        </div>
       </div>
     </div>
   )
 }
 
+// ── Row definitions ───────────────────────────────────────────────────────────
+
+const CONTRACT_ADDRESS_ROWS: RowDef[] = [
+  { label: 'VaultManager',      display: (d) => truncate(d.vaultManagerAddress),      isAddress: true },
+  { label: 'VaultManagerAdmin', display: (d) => truncate(d.vaultManagerAdminAddress), isAddress: true },
+  {
+    label: 'Access Manager', display: (d) => truncate(d.accessManager), isAddress: true,
+    setter: { fnName: 'setAccessManager', argType: 'address', timelocked: true, placeholder: '0x…' },
+  },
+  {
+    label: 'Share Token', display: (d) => truncate(d.shareToken), isAddress: true,
+    setter: { fnName: 'setShareToken', argType: 'address', timelocked: true, placeholder: '0x…' },
+  },
+  {
+    label: 'Fund Vault', display: (d) => truncate(d.fundVaultAddress), isAddress: true,
+    setter: { fnName: 'setFundVault', argType: 'address', timelocked: true, placeholder: '0x…' },
+  },
+  {
+    label: 'Request Manager', display: (d) => truncate(d.requestManager), isAddress: true,
+    setter: { fnName: 'setRequestManager', argType: 'address', timelocked: false, placeholder: '0x…' },
+  },
+  {
+    label: 'Price Feed', display: (d) => truncate(d.priceFeed), isAddress: true,
+    setter: { fnName: 'setPriceFeed', argType: 'address', timelocked: false, placeholder: '0x…' },
+  },
+  {
+    label: 'Fund NAV', display: (d) => truncate(d.fundNav), isAddress: true,
+    setter: { fnName: 'setFundNav', argType: 'address', timelocked: false, placeholder: '0x…' },
+  },
+]
+
+const FEE_CONFIG_ROWS: RowDef[] = [
+  {
+    label: 'Fee Receiver', display: (d) => truncate(d.feeConfig.feeReceiver), isAddress: true,
+    setter: { fnName: 'setFeeReceiver', argType: 'address', timelocked: true, placeholder: '0x…' },
+  },
+  {
+    label: 'Management Fee Rate', display: (d) => formatWadRate(d.feeConfig.managementFeeRate),
+    setter: {
+      fnName: 'setManagementFeeRate', argType: 'wad_pct', timelocked: false,
+      placeholder: 'e.g. 1.5', hint: 'Enter as a percentage (max 10%). E.g. "2" = 2%',
+    },
+  },
+  {
+    label: 'Performance Fee Rate', display: (d) => formatWadRate(d.feeConfig.performanceFeeRate),
+    setter: {
+      fnName: 'setPerformanceFeeRate', argType: 'wad_pct', timelocked: false,
+      placeholder: 'e.g. 20', hint: 'Enter as a percentage (max 50%). E.g. "20" = 20%',
+    },
+  },
+  { label: 'High Watermark (PPS)',     display: (d) => formatWadRate(d.feeConfig.highWatermark) },
+  { label: 'Last Management Harvest',  display: (d) => formatTimestamp(d.feeConfig.lastManagementHarvest) },
+  { label: 'Last Performance Harvest', display: (d) => formatTimestamp(d.feeConfig.lastHarvestPerformanceFeeTime) },
+]
+
+const NAV_RISK_ROWS: RowDef[] = [
+  {
+    label: 'Max PPS Deviation', display: (d) => d.deviationPps === '0' ? 'No limit' : formatWadRate(d.deviationPps),
+    setter: {
+      fnName: 'setDeviationPps', argType: 'wad_pct', timelocked: false,
+      placeholder: 'e.g. 5', hint: 'Enter as a percentage. E.g. "5" = 5% max deviation. 0 = no limit.',
+    },
+  },
+  {
+    label: 'Max NAV Staleness', display: (d) => d.maxNavStaleness === '0' ? 'Disabled' : formatDuration(Number(d.maxNavStaleness)),
+    setter: {
+      fnName: 'setMaxNavStaleness', argType: 'seconds', timelocked: false,
+      placeholder: 'seconds, e.g. 3600', hint: 'Maximum age of NAV update in seconds. 0 = disabled.',
+    },
+  },
+]
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function VaultConfigClient() {
   const { safeAddress, isSafeOwner, hasRole } = useRoleCheck('admin')
+  const { isConnected, chainId } = useAccount()
+  const isWrongChain = isConnected && chainId !== 999
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['vault-config'],
     queryFn: getVaultConfigData,
     refetchInterval: 300_000,
@@ -360,73 +547,54 @@ export default function VaultConfigClient() {
       </div>
     )
   }
+  const commonProps = { data, safeAddress, isSafeOwner, hasRole }
 
   return (
     <div className="space-y-10">
-      {/* ── Contract Addresses ────────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-3 text-base font-semibold text-neutral-900 dark:text-white">
-          Contract Addresses
-        </h2>
-        <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-5 dark:divide-neutral-800 dark:border-neutral-700 dark:bg-neutral-900">
-          <AddressRow label="VaultManager"       value={data.vaultManagerAddress} />
-          <AddressRow label="VaultManagerAdmin"  value={data.vaultManagerAdminAddress} />
-          <AddressRow label="Access Manager"     value={data.accessManager} />
-          <AddressRow label="Share Token"        value={data.shareToken} />
-          <AddressRow label="Fund Vault"         value={data.fundVaultAddress} />
-          <AddressRow label="Request Manager"    value={data.requestManager} />
-          <AddressRow label="Price Feed"         value={data.priceFeed} />
-          <AddressRow label="Fund NAV"           value={data.fundNav} />
-        </div>
-      </section>
+      {/* ── Page header ────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Vault Configuration</h1>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+        >
+          <svg
+            className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`}
+            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          {isFetching ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
 
-      {/* ── Fee Configuration ────────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-3 text-base font-semibold text-neutral-900 dark:text-white">
-          Fee Configuration
-        </h2>
-        <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-5 dark:divide-neutral-800 dark:border-neutral-700 dark:bg-neutral-900">
-          <AddressRow label="Fee Receiver"               value={data.feeConfig.feeReceiver} />
-          <ValueRow   label="Management Fee Rate"        value={formatWadRate(data.feeConfig.managementFeeRate)} />
-          <ValueRow   label="Performance Fee Rate"       value={formatWadRate(data.feeConfig.performanceFeeRate)} />
-          <ValueRow   label="High Watermark (PPS)"       value={formatWadRate(data.feeConfig.highWatermark)} />
-          <ValueRow   label="Last Management Harvest"    value={formatTimestamp(data.feeConfig.lastManagementHarvest)} />
-          <ValueRow   label="Last Performance Harvest"   value={formatTimestamp(data.feeConfig.lastHarvestPerformanceFeeTime)} />
-        </div>
-      </section>
+      <Section title="Contract Addresses"    rows={CONTRACT_ADDRESS_ROWS} {...commonProps} />
+      <Section title="Fee Configuration"     rows={FEE_CONFIG_ROWS}       {...commonProps} />
+      <Section title="NAV & Risk Parameters" rows={NAV_RISK_ROWS}         {...commonProps} />
 
-      {/* ── NAV / Risk Parameters ────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-3 text-base font-semibold text-neutral-900 dark:text-white">
-          NAV &amp; Risk Parameters
-        </h2>
-        <div className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 bg-white px-5 dark:divide-neutral-800 dark:border-neutral-700 dark:bg-neutral-900">
-          <ValueRow label="Max PPS Deviation"   value={data.deviationPps === '0' ? 'No limit' : formatWadRate(data.deviationPps)} />
-          <ValueRow label="Max NAV Staleness"   value={data.maxNavStaleness === '0' ? 'Disabled' : `${formatDuration(Number(data.maxNavStaleness))}`} />
-        </div>
-      </section>
-
-      {/* ── Update Configuration ──────────────────────────────────────── */}
-      <section>
-        <h2 className="mb-1 text-base font-semibold text-neutral-900 dark:text-white">
-          Update Configuration
-        </h2>
-        <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-          All changes go through the admin Safe and are subject to a timelock delay before execution.
-        </p>
-        <div className="flex flex-col gap-4">
-          {SETTERS.map((def) => (
-            <SetterCard
-              key={def.fnName}
-              def={def}
-              data={data}
-              safeAddress={safeAddress}
-              isSafeOwner={isSafeOwner}
-              hasRole={hasRole}
-            />
-          ))}
-        </div>
-      </section>
+      {/* ── Pending Timelock Operations ───────────────────────────────── */}
+      {data.pendingOps.length > 0 && (
+        <section>
+          <h2 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
+            Pending Timelock Operations
+          </h2>
+          <div className="space-y-3">
+            {data.pendingOps.map((op, i) => (
+              <PendingOpCard
+                key={`${op.selector}-${i}`}
+                op={op}
+                adminAddress={getAddress(data.vaultManagerAdminAddress)}
+                safeAddress={safeAddress}
+                isSafeOwner={isSafeOwner}
+                hasRole={hasRole}
+                isConnected={isConnected}
+                isWrongChain={isWrongChain}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }
