@@ -76,6 +76,12 @@ export default function RootLayout({
               >
                 Timelocks
               </Link>
+              <Link
+                href="/vault-config"
+                className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              >
+                Vault Config
+              </Link>
               <div className="ml-auto">
                 <ConnectWallet />
               </div>

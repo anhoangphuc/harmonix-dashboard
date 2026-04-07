@@ -1253,5 +1253,96 @@ export const HA_VAULT_READER_ABI =
       ],
       "stateMutability": "view",
       "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getFeeReceiver",
+      "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getManagementFeeRate",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getPerformanceFeeRate",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getHighWatermark",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getDeviationPps",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getMaxNavStaleness",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getLastNavUpdated",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getLastManagementHarvest",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getLastHarvestPerformanceFeeTime",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getEffectiveSupply",
+      "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+      "stateMutability": "view",
+      "type": "function"
+   },
+   {
+      "inputs": [],
+      "name": "getFeeConfig",
+      "outputs": [
+         {
+            "components": [
+               { "internalType": "address", "name": "feeReceiver", "type": "address" },
+               { "internalType": "uint256", "name": "managementFeeRate", "type": "uint256" },
+               { "internalType": "uint256", "name": "lastManagementHarvest", "type": "uint256" },
+               { "internalType": "uint256", "name": "performanceFeeRate", "type": "uint256" },
+               { "internalType": "uint256", "name": "highWatermark", "type": "uint256" },
+               { "internalType": "uint256", "name": "lastHarvestPerformanceFeeTime", "type": "uint256" }
+            ],
+            "internalType": "struct HaVaultReader.FeeConfig",
+            "name": "",
+            "type": "tuple"
+         }
+      ],
+      "stateMutability": "view",
+      "type": "function"
    }
 ] as const;
