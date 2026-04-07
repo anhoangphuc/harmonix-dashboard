@@ -155,14 +155,17 @@ function EditRow({ def, data, safeAddress, isSafeOwner, hasRole }: EditRowProps)
     ? data.pendingOps.find((op) => op.fnName === setter.fnName)
     : undefined
 
-  const calldata = setter && inputValue.trim()
+  const calldata = (setter && inputValue.trim()
     ? encodeCalldata(setter.fnName, setter.argType, inputValue.trim(), setter.timelocked)
-    : null
+    : null) as `0x${string}` | null
 
   function handlePropose() {
     if (!calldata) return
     proposeTx.reset()
-    proposeTx.mutate({ to: getAddress(data.vaultManagerAdminAddress), data: calldata })
+    proposeTx.mutate({
+      to: data.vaultManagerAdminAddress as `0x${string}`,
+      data: calldata as `0x${string}`,
+    })
   }
 
   function handleCancel() {
@@ -584,7 +587,7 @@ export default function VaultConfigClient() {
               <PendingOpCard
                 key={`${op.selector}-${i}`}
                 op={op}
-                adminAddress={getAddress(data.vaultManagerAdminAddress)}
+                adminAddress={data.vaultManagerAdminAddress as `0x${string}`}
                 safeAddress={safeAddress}
                 isSafeOwner={isSafeOwner}
                 hasRole={hasRole}
